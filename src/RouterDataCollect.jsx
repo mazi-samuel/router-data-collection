@@ -1,4 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
+import macbookImg from "./assets/macbook.jpg";
+import iphoneImg from "./assets/iphone.jpg";
+import oraimoImg from "./assets/oraimo.png";
+import glassesImg from "./assets/glasses.jpg";
+import crocsImg from "./assets/crocs.jpg";
 
 const GOOGLE_SHEETS_URL = import.meta.env.VITE_GOOGLE_SHEETS_URL || "";
 
@@ -28,6 +33,44 @@ const TIMES  = ["Early Morning (5–7am)","Morning Rush (7–9am)","Mid Morning 
 const DAYS   = ["Weekday (Mon–Fri)","Saturday","Sunday","Public Holiday"];
 const XP_PER_ENTRY = 120;
 const BONUS = { alt: 40, peak: 20, condition: 15 };
+
+const REWARDS = [
+  {
+    id: "macbook",
+    title: "Apple MacBook Pro",
+    xp: 150000,
+    img: macbookImg,
+    desc: "Supercharged for pro workflows. High-performance M-series chip with stunning Liquid Retina XDR display."
+  },
+  {
+    id: "iphone",
+    title: "Apple iPhone 13 Pro",
+    xp: 100000,
+    img: iphoneImg,
+    desc: "Pro camera system with Telephoto, Wide, and Ultra Wide cameras. Super Retina XDR display with ProMotion."
+  },
+  {
+    id: "oraimo",
+    title: "Oraimo BoomPop Pro",
+    xp: 30000,
+    img: oraimoImg,
+    desc: "Active Noise Cancelling over-ear headphones. Immersive sound, extra bass, and up to 40 hours of playtime."
+  },
+  {
+    id: "glasses",
+    title: "Photochromic Eyeglasses",
+    xp: 15000,
+    img: glassesImg,
+    desc: "Intelligent photochromism. Lenses automatically darken in direct sunlight and become transparent indoors."
+  },
+  {
+    id: "crocs",
+    title: "Pair of Crocs",
+    xp: 10000,
+    img: crocsImg,
+    desc: "Lightweight, water-friendly, and buoyant. Iconic Crocs Comfort for everyday commuting convenience."
+  }
+];
 
 function xpToLevel(xp) {
   if (xp < 200) return { n: 1, title: "Commuter Rookie",    next: 200  };
@@ -323,7 +366,7 @@ export default function App() {
             </div>
           </div>
           <p style={{ color: "#93C5FD", fontSize: 14, margin: 0, lineHeight: 1.6 }}>
-            Help us build the most accurate Lagos transport database ever. Every route you add earns XP and helps thousands of daily commuters.
+            Record your daily commuting routes and earn XP. Enter detailed route navigation with accurate fares and bus stops. More correct entries give you more XP to qualify for amazing rewards!
           </p>
 
           {/* Stats row */}
@@ -403,10 +446,16 @@ export default function App() {
             style={{ width: "100%", padding: "16px", background: "#F5A623", color: "#fff", fontWeight: 900, fontSize: 18, border: "none", borderRadius: 14, cursor: "pointer", marginBottom: 12, letterSpacing: "-0.3px" }}>
             🚌 Add a Route
           </button>
-          <button onClick={() => setScreen("leaderboard")}
-            style={{ width: "100%", padding: "14px", background: "#0A1F3D", color: "#fff", fontWeight: 700, fontSize: 16, border: "none", borderRadius: 14, cursor: "pointer", marginBottom: 12 }}>
-            🏆 Leaderboard & Entries
-          </button>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <button onClick={() => setScreen("leaderboard")}
+              style={{ width: "100%", padding: "14px", background: "#0A1F3D", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", borderRadius: 14, cursor: "pointer" }}>
+              🏆 Leaderboard
+            </button>
+            <button onClick={() => setScreen("rewards")}
+              style={{ width: "100%", padding: "14px", background: "#10B981", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", borderRadius: 14, cursor: "pointer" }}>
+              🎁 View Rewards
+            </button>
+          </div>
           <div style={{ textAlign: "center", fontSize: 11, color: "#64748B", marginBottom: 24, fontStyle: "italic" }}>
             {GOOGLE_SHEETS_URL
               ? "☁️ Data is syncing directly to Google Sheets"
@@ -565,6 +614,97 @@ export default function App() {
       </div>
     );
   }
+  
+  // ── REWARDS ───────────────────────────────────────────────────────────────
+  if (screen === "rewards") {
+    return (
+      <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", maxWidth: 680, margin: "0 auto", padding: "0 0 60px" }}>
+        <div style={{ background: "linear-gradient(135deg, #10B981, #059669)", padding: "24px 20px 20px" }}>
+          <button onClick={() => setScreen("home")} style={{ background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 999, cursor: "pointer", marginBottom: 16, fontSize: 13 }}>← Back</button>
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: 24 }}>🎁 Leaderboard Rewards</div>
+          <div style={{ color: "#D1FAE5", fontSize: 13, marginTop: 4 }}>Your current balance: <strong style={{ color: "#FFFBEB", fontSize: 16 }}>{myXP.toLocaleString()} XP</strong></div>
+        </div>
+
+        <div style={{ padding: "20px 20px" }}>
+          <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#1E40AF", marginBottom: 6 }}>🏆 How to qualify:</div>
+            <p style={{ fontSize: 13, color: "#1E3A8A", margin: 0, lineHeight: 1.6 }}>
+              Keep recording your daily commuting routes. Detailed entries with accurate fares and bus stops earn you more XP. Once you reach the required amount of XP, you qualify to claim the reward!
+            </p>
+          </div>
+
+          {REWARDS.map(r => {
+            const isUnlocked = myXP >= r.xp;
+            const progressPct = Math.min(100, Math.round((myXP / r.xp) * 100));
+            return (
+              <div key={r.id} style={{
+                background: "#fff",
+                border: isUnlocked ? "2px solid #10B981" : "1px solid #E2E8F0",
+                borderRadius: 16,
+                overflow: "hidden",
+                marginBottom: 20,
+                boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)"
+              }}>
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <div style={{ position: "relative", width: "100%", height: 240, background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                    <img src={r.img} alt={r.title} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    <div style={{
+                      position: "absolute",
+                      top: 12,
+                      right: 12,
+                      background: isUnlocked ? "#10B981" : "#64748B",
+                      color: "#fff",
+                      fontWeight: 800,
+                      fontSize: 12,
+                      padding: "6px 12px",
+                      borderRadius: 999
+                    }}>
+                      {isUnlocked ? "🎉 Qualified" : `${r.xp.toLocaleString()} XP`}
+                    </div>
+                  </div>
+
+                  <div style={{ padding: 20 }}>
+                    <h3 style={{ margin: "0 0 8px 0", fontSize: 18, color: "#0F172A", fontWeight: 800 }}>{r.title}</h3>
+                    <p style={{ margin: "0 0 16px 0", fontSize: 13, color: "#64748B", lineHeight: 1.5 }}>{r.desc}</p>
+                    
+                    {/* Progress Bar */}
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 6 }}>
+                        <span>Progress: {progressPct}%</span>
+                        <span>{myXP.toLocaleString()} / {r.xp.toLocaleString()} XP</span>
+                      </div>
+                      <div style={{ height: 8, background: "#E2E8F0", borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${progressPct}%`, background: isUnlocked ? "#10B981" : "#3B82F6", borderRadius: 4 }} />
+                      </div>
+                    </div>
+
+                    <button 
+                      disabled={!isUnlocked}
+                      onClick={() => alert(`Congratulations! You have qualified for the ${r.title}. We will contact you soon.`)}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        background: isUnlocked ? "#10B981" : "#E2E8F0",
+                        color: isUnlocked ? "#fff" : "#94A3B8",
+                        fontWeight: 700,
+                        fontSize: 14,
+                        border: "none",
+                        borderRadius: 10,
+                        cursor: isUnlocked ? "pointer" : "not-allowed",
+                        transition: "background 0.2s"
+                      }}
+                    >
+                      {isUnlocked ? "Claim Reward" : "Locked (Insufficient XP)"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   // ── FORM ──────────────────────────────────────────────────────────────────
   return (
@@ -652,7 +792,7 @@ export default function App() {
         {step === 1 && (
           <div>
             <div style={{ background: "#EFF6FF", borderRadius: 12, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#1D4ED8", lineHeight: 1.6 }}>
-              💡 Add every bus stop along the route in order. Include the boarding fare at each stop — this is what makes Router accurate. The fare listed is what you'd pay boarding FROM that stop.
+              💡 Add every bus stop along the route in order. Include the boarding fare at each stop — this ensures your entry is detailed and correct. The fare listed is what you'd pay boarding FROM that stop.
             </div>
 
             {form.stops.map((stop, i) => (
@@ -679,7 +819,7 @@ export default function App() {
         {step === 2 && (
           <div>
             <div style={{ background: "#EFF6FF", borderRadius: 12, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#1D4ED8" }}>
-              💡 When did you travel this route? This helps Router know when fares are higher or lower.
+              💡 When did you travel this route? This helps verify commuting fares under different conditions.
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
