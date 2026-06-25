@@ -247,6 +247,7 @@ export default function App() {
   const [myXP, setMyXP]           = useState(0);
   const [myStreak, setMyStreak]   = useState(0);
   const [myName, setMyName]       = useState("");
+  const [myUserId, setMyUserId]   = useState("");
   const [nameInput, setNameInput] = useState("");
   const [lastEntry, setLastEntry] = useState(null);
   const [loading, setLoading]     = useState(true);
@@ -258,11 +259,20 @@ export default function App() {
     (async () => {
       let savedEntries = [];
       const saved = await loadData("router:state");
+      let currentUserId = "";
       if (saved) {
         savedEntries = saved.entries || [];
         setMyXP(saved.myXP || 0);
         setMyStreak(saved.myStreak || 0);
         setMyName(saved.myName || "");
+        currentUserId = saved.myUserId || "";
+        setMyUserId(currentUserId);
+      }
+      // If user has a name but no userId, generate and persist it
+      if (saved && saved.myName && !saved.myUserId) {
+        currentUserId = uid();
+        setMyUserId(currentUserId);
+        await saveData("router:state", { ...saved, myUserId: currentUserId });
       }
       try {
         const fetchUrl = GOOGLE_SHEETS_URL || "/api/entries";
@@ -282,9 +292,9 @@ export default function App() {
   }, []);
 
   const persist = useCallback(async (updates) => {
-    const state = { entries, myXP, myStreak, myName, ...updates };
+    const state = { entries, myXP, myStreak, myName, myUserId, ...updates };
     await saveData("router:state", state);
-  }, [entries, myXP, myStreak, myName]);
+  }, [entries, myXP, myStreak, myName, myUserId]);
 
   function showToast(msg, type = "success") {
     setToast({ msg, type });
@@ -348,6 +358,7 @@ export default function App() {
     const entry = {
       ...form,
       contributor: myName,
+      contributorId: myUserId,
       xpEarned: earnedXP,
       ts: new Date().toISOString()
     };
@@ -395,13 +406,20 @@ export default function App() {
   }
 
   // ── Leaderboard data ──────────────────────────────────────────────────────
-  const lb = Object.entries(
-    entries.reduce((acc, e) => {
-      const name = e.contributor || "Anonymous";
-      acc[name] = (acc[name] || 0) + (e.xpEarned || XP_PER_ENTRY);
-      return acc;
-    }, {})
-  ).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const lbMap = entries.reduce((acc, e) => {
+    const id = e.contributorId || e.contributor || "Anonymous";
+    const name = e.contributor || "Anonymous";
+    if (!acc[id]) {
+      acc[id] = { name, xp: 0 };
+    }
+    acc[id].xp += (e.xpEarned || XP_PER_ENTRY);
+    return acc;
+  }, {});
+
+  const lb = Object.entries(lbMap)
+    .map(([id, data]) => ({ id, name: data.name, xp: data.xp }))
+    .sort((a, b) => b.xp - a.xp)
+    .slice(0, 10);
 
   const myLevel = xpToLevel(myXP);
   const pct     = Math.min(100, Math.round((myXP / myLevel.next) * 100));
@@ -422,8 +440,7 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
             <div style={{ fontSize: 36 }}>🗺️</div>
             <div>
-              <div style={{ color: "#E87722", fontWeight: 900, fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase" }}>Jùrù Ányá Technologies</div>
-              <div style={{ color: "#fff", fontWeight: 900, fontSize: 24, lineHeight: 1.1, letterSpacing: "-0.5px", marginTop: 4 }}>Commuter Portal</div>
+              <div style={{ color: "#fff", fontWeight: 900, fontSize: 24, lineHeight: 1.1, letterSpacing: "-0.5px" }}>Jùrù Ányá Technologies</div>
             </div>
           </div>
           <p style={{ color: "#93C5FD", fontSize: 14, margin: "0 0 12px 0", lineHeight: 1.6 }}>
@@ -457,10 +474,10 @@ export default function App() {
               <div style={{ fontWeight: 800, fontSize: 16, color: "#92400E", marginBottom: 6 }}>🙋 Who are you?</div>
               <p style={{ fontSize: 13, color: "#78350F", margin: "0 0 14px", lineHeight: 1.5 }}>Enter your name to appear on the leaderboard and track your XP across devices.</p>
               <div style={{ display: "flex", gap: 10 }}>
-                <input style={{ ...inp, flex: 1 }} placeholder="Your name or nickname" value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) { const n = nameInput.trim(); setMyName(n); persist({ myName: n }); } }} />
+                <input style={{ ...inp, flex: 1 }} placeholder="Your name or nickname" value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) { const n = nameInput.trim(); const newId = uid(); setMyName(n); setMyUserId(newId); persist({ myName: n, myUserId: newId }); } }} />
                 <button
                   disabled={!nameInput.trim()}
-                  onClick={() => { const n = nameInput.trim(); setMyName(n); persist({ myName: n }); }}
+                  onClick={() => { const n = nameInput.trim(); const newId = uid(); setMyName(n); setMyUserId(newId); persist({ myName: n, myUserId: newId }); }}
                   style={{ padding: "9px 18px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, opacity: nameInput.trim() ? 1 : 0.5 }}>
                   Save
                 </button>
@@ -616,19 +633,19 @@ export default function App() {
               <div style={{ fontWeight: 700 }}>No entries yet.</div>
               <div style={{ fontSize: 13, marginTop: 4 }}>Be the first to add a route!</div>
             </div>
-          ) : lb.map(([name, xp], i) => (
-            <div key={name} style={{
+          ) : lb.map((item, i) => (
+            <div key={item.id} style={{
               display: "flex", alignItems: "center", gap: 14,
-              background: name === myName ? "#FEF9EE" : "#fff",
-              border: name === myName ? "2px solid #F5A623" : "1px solid #E2E8F0",
+              background: item.id === myUserId ? "#FEF9EE" : "#fff",
+              border: item.id === myUserId ? "2px solid #F5A623" : "1px solid #E2E8F0",
               borderRadius: 12, padding: "14px 16px", marginBottom: 10
             }}>
               <div style={{ fontSize: 22, width: 28, textAlign: "center" }}>{medals[i] || `#${i + 1}`}</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: "#1E293B" }}>{name} {name === myName ? "👈 you" : ""}</div>
-                <div style={{ fontSize: 12, color: "#64748B" }}>Level {xpToLevel(xp).n} · {xpToLevel(xp).title}</div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: "#1E293B" }}>{item.name} {item.id === myUserId ? "👈 you" : ""}</div>
+                <div style={{ fontSize: 12, color: "#64748B" }}>Level {xpToLevel(item.xp).n} · {xpToLevel(item.xp).title}</div>
               </div>
-              <div style={{ fontWeight: 800, fontSize: 18, color: "#F5A623" }}>{xp.toLocaleString()} <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 400 }}>XP</span></div>
+              <div style={{ fontWeight: 800, fontSize: 18, color: "#F5A623" }}>{item.xp.toLocaleString()} <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 400 }}>XP</span></div>
             </div>
           ))}
 
