@@ -179,6 +179,67 @@ function AltRow({ alt, idx, onChange, onRemove }) {
 const lbl = { display: "block", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 };
 const inp = { width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 14, color: "#1E293B", background: "#fff", outline: "none", fontFamily: "inherit" };
 
+function CountdownWidget({ light }) {
+  const targetDate = "2026-09-30T23:59:59";
+  const calculateTimeLeft = () => {
+    const diff = +new Date(targetDate) - +new Date();
+    if (diff <= 0) return { months: 0, weeks: 0, days: 0, hours: 0, minutes: 0, seconds: 0 };
+
+    const totalSecs = Math.floor(diff / 1000);
+    const totalMins = Math.floor(totalSecs / 60);
+    const totalHrs = Math.floor(totalMins / 60);
+    const totalDays = Math.floor(totalHrs / 24);
+
+    const m = Math.floor(totalDays / 30);
+    const remDays = totalDays % 30;
+    const w = Math.floor(remDays / 7);
+    const d = remDays % 7;
+
+    return {
+      months: m,
+      weeks: w,
+      days: d,
+      hours: totalHrs % 24,
+      minutes: totalMins % 60,
+      seconds: totalSecs % 60
+    };
+  };
+
+  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft(calculateTimeLeft());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const items = [
+    { label: "Months", val: timeLeft.months },
+    { label: "Weeks",  val: timeLeft.weeks },
+    { label: "Days",   val: timeLeft.days },
+    { label: "Hours",  val: timeLeft.hours },
+    { label: "Mins",   val: timeLeft.minutes },
+    { label: "Secs",   val: timeLeft.seconds }
+  ];
+
+  const boxBg = light ? "rgba(0, 0, 0, 0.05)" : "rgba(255, 255, 255, 0.15)";
+  const labelColor = light ? "#475569" : "#93C5FD";
+  const numColor = light ? "#E87722" : "#F5A623";
+  const borderColor = light ? "rgba(0, 0, 0, 0.05)" : "rgba(255, 255, 255, 0.05)";
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginTop: 14 }}>
+      {items.map(x => (
+        <div key={x.label} style={{ background: boxBg, borderRadius: 10, padding: "8px 4px", textAlign: "center", border: `1px solid ${borderColor}` }}>
+          <div style={{ fontSize: 16, fontWeight: 950, color: numColor, lineHeight: 1.1 }}>{String(x.val).padStart(2, "0")}</div>
+          <div style={{ fontSize: 8, color: labelColor, fontWeight: 700, textTransform: "uppercase", marginTop: 2 }}>{x.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [screen, setScreen]       = useState("home"); // home | form | leaderboard | success
@@ -369,8 +430,9 @@ export default function App() {
             Record your daily commuting routes and earn XP. Enter detailed route navigation with accurate fares and bus stops. More correct entries give you more XP to qualify for amazing rewards!
           </p>
           <div style={{ display: "inline-block", background: "rgba(255, 255, 255, 0.15)", border: "1px solid rgba(255, 255, 255, 0.25)", color: "#fff", fontWeight: 700, fontSize: 11, padding: "5px 12px", borderRadius: 999, marginBottom: 4 }}>
-            ⏳ Entries close: August 31st, 11:59 PM
+            ⏳ Entries close: September 30th, 11:59 PM
           </div>
+          <CountdownWidget />
 
           {/* Stats row */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 20 }}>
@@ -629,8 +691,9 @@ export default function App() {
               Keep recording your daily commuting routes. Detailed entries with accurate fares and bus stops earn you more XP. Once you reach the required amount of XP, you qualify to claim the reward!
             </p>
             <div style={{ marginTop: 12, background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 12, padding: "8px 12px", borderRadius: 8, display: "inline-block" }}>
-              ⏳ Campaign Deadline: August 31st, 11:59 PM
+              ⏳ Campaign Deadline: September 30th, 11:59 PM
             </div>
+            <CountdownWidget light={true} />
           </div>
 
           {REWARDS.map(r => {
