@@ -38,35 +38,35 @@ const REWARDS = [
   {
     id: "macbook",
     title: "Apple MacBook Pro",
-    xp: 150000,
+    xp: 1500000,
     img: macbookImg,
     desc: "Supercharged for pro workflows. High-performance M-series chip with stunning Liquid Retina XDR display."
   },
   {
     id: "iphone",
     title: "Apple iPhone 13 Pro",
-    xp: 100000,
+    xp: 1000000,
     img: iphoneImg,
     desc: "Pro camera system with Telephoto, Wide, and Ultra Wide cameras. Super Retina XDR display with ProMotion."
   },
   {
     id: "oraimo",
     title: "Oraimo BoomPop Pro",
-    xp: 30000,
+    xp: 250000,
     img: oraimoImg,
     desc: "Active Noise Cancelling over-ear headphones. Immersive sound, extra bass, and up to 40 hours of playtime."
   },
   {
     id: "glasses",
     title: "Photochromic Eyeglasses",
-    xp: 15000,
+    xp: 100000,
     img: glassesImg,
     desc: "Intelligent photochromism. Lenses automatically darken in direct sunlight and become transparent indoors."
   },
   {
     id: "crocs",
     title: "Pair of Crocs",
-    xp: 10000,
+    xp: 50000,
     img: crocsImg,
     desc: "Lightweight, water-friendly, and buoyant. Iconic Crocs Comfort for everyday commuting convenience."
   }
@@ -362,12 +362,15 @@ export default function App() {
             <div style={{ fontSize: 36 }}>🗺️</div>
             <div>
               <div style={{ color: "#E87722", fontWeight: 900, fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase" }}>Jùrù Ányá Technologies</div>
-              <div style={{ color: "#fff", fontWeight: 900, fontSize: 28, lineHeight: 1.1, letterSpacing: "-0.5px" }}>ROUTER Data Collection</div>
+              <div style={{ color: "#fff", fontWeight: 900, fontSize: 24, lineHeight: 1.1, letterSpacing: "-0.5px", marginTop: 4 }}>Commuter Portal</div>
             </div>
           </div>
-          <p style={{ color: "#93C5FD", fontSize: 14, margin: 0, lineHeight: 1.6 }}>
+          <p style={{ color: "#93C5FD", fontSize: 14, margin: "0 0 12px 0", lineHeight: 1.6 }}>
             Record your daily commuting routes and earn XP. Enter detailed route navigation with accurate fares and bus stops. More correct entries give you more XP to qualify for amazing rewards!
           </p>
+          <div style={{ display: "inline-block", background: "rgba(255, 255, 255, 0.15)", border: "1px solid rgba(255, 255, 255, 0.25)", color: "#fff", fontWeight: 700, fontSize: 11, padding: "5px 12px", borderRadius: 999, marginBottom: 4 }}>
+            ⏳ Entries close: August 31st, 11:59 PM
+          </div>
 
           {/* Stats row */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 20 }}>
@@ -455,12 +458,6 @@ export default function App() {
               style={{ width: "100%", padding: "14px", background: "#10B981", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", borderRadius: 14, cursor: "pointer" }}>
               🎁 View Rewards
             </button>
-          </div>
-          <div style={{ textAlign: "center", fontSize: 11, color: "#64748B", marginBottom: 24, fontStyle: "italic" }}>
-            {GOOGLE_SHEETS_URL
-              ? "☁️ Data is syncing directly to Google Sheets"
-              : <span>📂 Data is saved in the <code>data/</code> folder for Excel</span>
-            }
           </div>
 
           {/* Recent entries */}
@@ -631,6 +628,9 @@ export default function App() {
             <p style={{ fontSize: 13, color: "#1E3A8A", margin: 0, lineHeight: 1.6 }}>
               Keep recording your daily commuting routes. Detailed entries with accurate fares and bus stops earn you more XP. Once you reach the required amount of XP, you qualify to claim the reward!
             </p>
+            <div style={{ marginTop: 12, background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 12, padding: "8px 12px", borderRadius: 8, display: "inline-block" }}>
+              ⏳ Campaign Deadline: August 31st, 11:59 PM
+            </div>
           </div>
 
           {REWARDS.map(r => {
