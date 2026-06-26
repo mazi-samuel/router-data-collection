@@ -234,6 +234,27 @@ function handleThumbs(ss, data) {
 
 // ── Action: Record an XP adjustment ──────────────────────────────────────────
 function handleXpAdjust(ss, data) {
+  if (data.type === "SPEED_BOOST" && data.routeId) {
+    var sheet = ss.getSheetByName(XP_ADJ_SHEET);
+    if (sheet) {
+      var rows = sheet.getDataRange().getValues();
+      if (rows.length > 1) {
+        var headers = rows[0].map(function(h) { return String(h).trim(); });
+        var rIdCol = headers.indexOf("routeId");
+        var typeCol = headers.indexOf("type");
+        var userIdCol = headers.indexOf("userId");
+        if (rIdCol >= 0 && typeCol >= 0 && userIdCol >= 0) {
+          for (var i = 1; i < rows.length; i++) {
+            if (String(rows[i][typeCol]) === "SPEED_BOOST" && 
+                String(rows[i][rIdCol]) === String(data.routeId) &&
+                String(rows[i][userIdCol]) === String(data.userId)) {
+              return jsonOut({ success: false, error: "Speed boost already claimed for this route" });
+            }
+          }
+        }
+      }
+    }
+  }
   recordXpAdjust(ss, data);
   return jsonOut({ success: true });
 }
@@ -443,7 +464,7 @@ function deleteRowsForRoute(sheet, routeId) {
 
 function recordXpAdjust(ss, data) {
   var sheet = getOrCreateSheet(ss, XP_ADJ_SHEET, [
-    "adjustmentId", "userId", "userName", "type", "oldXP", "newXP", "delta", "reason", "ts"
+    "adjustmentId", "userId", "userName", "type", "oldXP", "newXP", "delta", "reason", "routeId", "ts"
   ]);
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return String(h).trim(); });
   var rd = {
@@ -451,6 +472,7 @@ function recordXpAdjust(ss, data) {
     userId: data.userId || "", userName: data.userName || "",
     type: data.type || "", oldXP: data.oldXP || 0, newXP: data.newXP || 0,
     delta: data.delta || 0, reason: data.reason || "",
+    routeId: data.routeId || "",
     ts: data.ts || new Date().toISOString()
   };
   sheet.appendRow(headers.map(function(h) { return rd[h] !== undefined ? rd[h] : ""; }));

@@ -36,6 +36,8 @@ const XP_PER_ENTRY = 120;
 const BONUS = { alt: 40, peak: 20, condition: 15 };
 const BOOST = { altOtherDiv: 1.5, speedDiv: 1.2 };
 const COMMENT_XP = { ownerUp: 1, commenterUp: 5, commenterDown: 1 };
+const SPEED_BOOST_FLAT_XP = 316; // Max flat XP award for speed boost
+const DAILY_BOOST_TARGET  = 50;  // Routes per day to unlock the daily booster
 
 const REWARDS = [
   { id: "macbook", title: "Apple MacBook Pro",       xp: 1500000, img: macbookImg, desc: "Supercharged for pro workflows. High-performance M-series chip with stunning Liquid Retina XDR display." },
@@ -57,6 +59,9 @@ function xpToLevel(xp) {
 function uid()            { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function fmt(n)           { return `₦${Number(n).toLocaleString()}`; }
 function applyBoost(xp, divisor) { return Math.round((xp * 2) / divisor); }
+// Speed boost uses flat addition instead of the multiplier formula — math kept below for reference:
+// function applySpeedBoostOld(xp) { return Math.round((xp * 2) / BOOST.speedDiv); }
+function applySpeedBoost(xp) { return xp + SPEED_BOOST_FLAT_XP; }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 function VehicleChip({ v, selected, onToggle }) {
@@ -200,8 +205,9 @@ function CountdownWidget({ light }) {
   );
 }
 
-// ── Speed Boost Widget (site-wide 60s cyclic timer) ───────────────────────────
-function SpeedBoostWidget({ onClaim, claimed }) {
+// Anti-cheat: hasSubmittedThisSession is in-memory (cleared on refresh) so you must
+// actually submit a route in the current browser session to be eligible.
+function SpeedBoostWidget({ onClaim, claimed, hasSubmittedThisSession }) {
   const [secsLeft, setSecsLeft] = useState(60);
   const [winOpen, setWinOpen]   = useState(false);
   useEffect(() => {
@@ -216,15 +222,22 @@ function SpeedBoostWidget({ onClaim, claimed }) {
   }, []);
 
   if (winOpen) {
+    const eligible = hasSubmittedThisSession;
+    const btnDisabled = !eligible || claimed;
     return (
       <div style={{ margin: "12px 0", padding: "14px 16px", background: "linear-gradient(135deg, #7C3AED, #4F46E5)", borderRadius: 14, textAlign: "center", boxShadow: "0 0 20px rgba(124,58,237,0.5)", animation: "pulse 1s infinite" }}>
         <div style={{ color: "#E9D5FF", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>⚡ SPEED BONUS WINDOW OPEN — 5 seconds!</div>
+        {!eligible && (
+          <div style={{ color: "#C4B5FD", fontSize: 11, marginBottom: 8, fontStyle: "italic" }}>
+            Submit a route this session to unlock Speed Boost 🔒
+          </div>
+        )}
         <button
-          onClick={claimed ? undefined : onClaim}
-          disabled={claimed}
-          style={{ padding: "12px 28px", background: claimed ? "#6B7280" : "#F5A623", color: "#fff", fontWeight: 900, fontSize: 16, border: "none", borderRadius: 10, cursor: claimed ? "not-allowed" : "pointer", letterSpacing: "-0.3px" }}
+          onClick={btnDisabled ? undefined : onClaim}
+          disabled={btnDisabled}
+          style={{ padding: "12px 28px", background: btnDisabled ? "#6B7280" : "#F5A623", color: "#fff", fontWeight: 900, fontSize: 16, border: "none", borderRadius: 10, cursor: btnDisabled ? "not-allowed" : "pointer", letterSpacing: "-0.3px", opacity: btnDisabled ? 0.65 : 1 }}
         >
-          {claimed ? "✅ Bonus Claimed!" : "⚡ CLAIM SPEED BOOST!"}
+          {claimed ? "✅ Bonus Claimed! (+316 XP)" : eligible ? "⚡ CLAIM SPEED BOOST! (+316 XP)" : "🔒 Submit a Route First"}
         </button>
       </div>
     );
@@ -232,8 +245,76 @@ function SpeedBoostWidget({ onClaim, claimed }) {
 
   return (
     <div style={{ margin: "10px 0", padding: "10px 14px", background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.2)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <div style={{ fontSize: 12, color: "#7C3AED", fontWeight: 700 }}>⏱ Site-wide Speed Bonus in</div>
+      <div style={{ fontSize: 12, color: "#7C3AED", fontWeight: 700 }}>⏱ Speed Bonus window in</div>
       <div style={{ fontWeight: 900, fontSize: 18, color: "#7C3AED" }}>{String(secsLeft).padStart(2, "0")}s</div>
+    </div>
+  );
+}
+
+// ── Daily 50-Routes Booster Widget ────────────────────────────────────────────
+function DailyBoostWidget({ dailyCount, onClaim, dailyBoostClaimed, dailyBoostUnlocked, dailyWindowStart }) {
+  const pct = Math.min((dailyCount / DAILY_BOOST_TARGET) * 100, 100);
+  const remaining = Math.max(DAILY_BOOST_TARGET - dailyCount, 0);
+
+  // 24h countdown timer
+  const [timeRemainingStr, setTimeRemainingStr] = useState("");
+  useEffect(() => {
+    if (!dailyWindowStart) {
+      setTimeRemainingStr("Not started yet");
+      return;
+    }
+    const update = () => {
+      const elapsed = Date.now() - dailyWindowStart;
+      const left = 24 * 60 * 60 * 1000 - elapsed;
+      if (left <= 0) {
+        setTimeRemainingStr("Expired");
+      } else {
+        const h = Math.floor(left / (3600 * 1000));
+        const m = Math.floor((left % (3600 * 1000)) / (60 * 1000));
+        const s = Math.floor((left % (60 * 1000)) / 1000);
+        setTimeRemainingStr(`${h}h ${m}m ${s}s remaining`);
+      }
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [dailyWindowStart]);
+
+  return (
+    <div style={{ margin: "10px 0", padding: "14px 16px", background: "linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.08))", border: `1.5px solid ${dailyBoostUnlocked ? "#10B981" : "rgba(16,185,129,0.25)"}`, borderRadius: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: "#065F46", display: "flex", alignItems: "center", gap: 5 }}>
+          🗓️ Daily Route Challenge
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 900, color: dailyBoostUnlocked ? "#10B981" : "#047857" }}>
+          {dailyCount}/{DAILY_BOOST_TARGET}
+        </div>
+      </div>
+      {/* Progress bar */}
+      <div style={{ background: "rgba(16,185,129,0.15)", borderRadius: 999, height: 8, marginBottom: 8, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, #10B981, #34D399)", borderRadius: 999, transition: "width 0.4s ease" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: "#047857", fontWeight: 700 }}>
+          🕒 Cycle: {timeRemainingStr}
+        </div>
+      </div>
+      {dailyBoostUnlocked ? (
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: "#065F46", fontWeight: 700, marginBottom: 6 }}>🎉 50 routes today! You earned a 2× Booster!</div>
+          <button
+            onClick={dailyBoostClaimed ? undefined : onClaim}
+            disabled={dailyBoostClaimed}
+            style={{ padding: "10px 22px", background: dailyBoostClaimed ? "#6B7280" : "linear-gradient(135deg,#10B981,#059669)", color: "#fff", fontWeight: 900, fontSize: 14, border: "none", borderRadius: 10, cursor: dailyBoostClaimed ? "not-allowed" : "pointer", opacity: dailyBoostClaimed ? 0.7 : 1 }}
+          >
+            {dailyBoostClaimed ? "✅ Daily Boost Claimed!" : "🚀 CLAIM 2× DAILY BOOST!"}
+          </button>
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: "#047857", fontWeight: 600, fontStyle: "italic" }}>
+          Complete daily {remaining > 0 ? `${remaining} more route${remaining > 1 ? "s" : ""}` : "50 routes"} and get a chance for a 2× booster!
+        </div>
+      )}
     </div>
   );
 }
@@ -262,6 +343,7 @@ export default function App() {
   // ── global data ───────────────────────────────────────────────────────────
   const [entries, setEntries]     = useState([]);
   const [comments, setComments]   = useState([]);
+  const [xpAdjustments, setXpAdjustments] = useState([]);
   // ── current user ──────────────────────────────────────────────────────────
   const [myXP, setMyXP]           = useState(0);
   const [myStreak, setMyStreak]   = useState(0);
@@ -274,7 +356,16 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [lastEntry, setLastEntry] = useState(null);
   // ── boost state ───────────────────────────────────────────────────────────
-  const [boostClaimed, setBoostClaimed] = useState(false);
+  const [boostClaimed, setBoostClaimed]           = useState(false);
+  // hasSubmittedThisSession is intentionally in-memory only (not persisted).
+  // Refreshing the page resets it, so you must actually submit a route per session.
+  const [hasSubmittedThisSession, setHasSubmittedThisSession] = useState(false);
+  const [lastSubmittedRouteId, setLastSubmittedRouteId] = useState("");
+  const [claimedRouteIds, setClaimedRouteIds] = useState([]);
+  // ── daily 50-routes booster state (persisted across reloads, resets every 24h) ─
+  const [dailyCount, setDailyCount]               = useState(0);
+  const [dailyBoostClaimed, setDailyBoostClaimed] = useState(false);
+  const [dailyWindowStart, setDailyWindowStart]   = useState(null); // timestamp ms
   // ── community state ───────────────────────────────────────────────────────
   const [viewingRoute, setViewingRoute]     = useState(null);
   const [editingEntry, setEditingEntry]     = useState(null);
@@ -329,6 +420,7 @@ export default function App() {
 
       if (serverEntries.length > 0) setEntries(serverEntries);
       setComments(serverComments);
+      setXpAdjustments(serverAdj);
 
       if (name) {
         const totalXP = computeMyXP(serverEntries, serverAdj, name, userId);
@@ -363,6 +455,25 @@ export default function App() {
       if (saved?.myName && !saved?.myUserId) {
         currentUserId = uid();
         setMyUserId(currentUserId);
+      }
+      // ── Load speed boost state ────────────────────────────────────────────
+      const sbSaved = await loadData("router:speed_boost");
+      if (sbSaved) {
+        setLastSubmittedRouteId(sbSaved.lastSubmittedRouteId || "");
+        setClaimedRouteIds(sbSaved.claimedRouteIds || []);
+      }
+      // ── Load daily booster state, reset if 24h window has expired ─────────
+      const dailySaved = await loadData("router:daily");
+      if (dailySaved) {
+        const now = Date.now();
+        const windowStart = dailySaved.windowStart || 0;
+        if (now - windowStart < 24 * 60 * 60 * 1000) {
+          // Still within today's 24h window
+          setDailyCount(dailySaved.dailyCount || 0);
+          setDailyBoostClaimed(dailySaved.dailyBoostClaimed || false);
+          setDailyWindowStart(windowStart);
+        }
+        // else: window expired, daily state stays at default 0
       }
       await fetchAll(currentName, currentUserId, true);
       setLoading(false);
@@ -402,18 +513,39 @@ export default function App() {
     await saveData("router:state", { entries, myXP: xp, myStreak: streak, myName: nameVal, myUserId: newId });
   }, [entries]);
 
-  // ── Speed Boost claim ──────────────────────────────────────────────────────
+  // ── Speed Boost claim (flat +316 XP, requires a submission this session) ───
   const handleClaimSpeedBoost = useCallback(async () => {
-    if (boostClaimed || !myName) return;
-    const newXP = applyBoost(myXP, BOOST.speedDiv);
-    setBoostClaimed(true);
+    if (!lastSubmittedRouteId || (claimedRouteIds && claimedRouteIds.includes(lastSubmittedRouteId)) || !myName || !hasSubmittedThisSession) return;
+    const newXP = applySpeedBoost(myXP); // flat +316 XP
+    // Old multiplier formula (commented out, toggle if needed):
+    // const newXP = applyBoost(myXP, BOOST.speedDiv);
+    const delta = newXP - myXP;
+    const newClaimed = [...(claimedRouteIds || []), lastSubmittedRouteId];
+    setClaimedRouteIds(newClaimed);
+    await saveData("router:speed_boost", { lastSubmittedRouteId, claimedRouteIds: newClaimed });
     setMyXP(newXP);
     await persist({ myXP: newXP });
     try {
-      await apiPost({ action: "xpAdjust", userId: myUserId, userName: myName, type: "SPEED_BOOST", oldXP: myXP, newXP, delta: newXP - myXP, reason: "Site-wide speed bonus claimed" });
+      await apiPost({ action: "xpAdjust", userId: myUserId, userName: myName, type: "SPEED_BOOST", oldXP: myXP, newXP, delta, reason: "Speed boost for route " + lastSubmittedRouteId, routeId: lastSubmittedRouteId });
     } catch {}
-    showToast(`⚡ Speed Boost! +${(newXP - myXP).toLocaleString()} XP`);
-  }, [boostClaimed, myXP, myName, myUserId, persist]);
+    showToast(`⚡ Speed Boost! +${delta.toLocaleString()} XP`);
+  }, [claimedRouteIds, lastSubmittedRouteId, hasSubmittedThisSession, myXP, myName, myUserId, persist]);
+
+  // ── Daily 50-routes booster claim (2× multiplier) ─────────────────────────
+  const handleClaimDailyBoost = useCallback(async () => {
+    if (!myName || dailyCount < DAILY_BOOST_TARGET) return;
+    const newXP = applyBoost(myXP, 1); // ×2 ÷ 1 = double
+    const delta = newXP - myXP;
+    setMyXP(newXP);
+    setDailyCount(0);
+    setDailyBoostClaimed(false);
+    await persist({ myXP: newXP });
+    await saveData("router:daily", { dailyCount: 0, dailyBoostClaimed: false, windowStart: dailyWindowStart });
+    try {
+      await apiPost({ action: "xpAdjust", userId: myUserId, userName: myName, type: "DAILY_50_BOOST", oldXP: myXP, newXP, delta, reason: "Daily 50-routes challenge booster claimed" });
+    } catch {}
+    showToast(`🚀 Daily 2× Boost! +${delta.toLocaleString()} XP`);
+  }, [dailyCount, dailyWindowStart, myXP, myName, myUserId, persist]);
 
   // ── Form helpers ──────────────────────────────────────────────────────────
   function setF(k, v) { setForm(f => ({ ...f, [k]: v })); }
@@ -446,7 +578,22 @@ export default function App() {
     const newStreak = myStreak + 1;
     setEntries(newEntries); setMyXP(newXP); setMyStreak(newStreak);
     setLastEntry({ ...entry, earnedXP });
-    setBoostClaimed(false); // reset boost claim so they can use the window if it opens
+    setLastSubmittedRouteId(entry.id);
+    await saveData("router:speed_boost", { lastSubmittedRouteId: entry.id, claimedRouteIds });
+    // Mark that they have submitted at least once in this session (anti-cheat)
+    setHasSubmittedThisSession(true);
+    // ── Update daily booster counter ─────────────────────────────────────
+    const now = Date.now();
+    const winStart = dailyWindowStart || now;
+    const isWithin24h = dailyWindowStart && (now - dailyWindowStart < 24 * 60 * 60 * 1000);
+    const newDailyCount = isWithin24h ? dailyCount + 1 : 1;
+    const newWindowStart = isWithin24h ? winStart : now;
+    setDailyCount(newDailyCount);
+    if (!isWithin24h) {
+      setDailyWindowStart(newWindowStart);
+      setDailyBoostClaimed(false); // reset if a new 24h window just started
+    }
+    await saveData("router:daily", { dailyCount: newDailyCount, dailyBoostClaimed: isWithin24h ? dailyBoostClaimed : false, windowStart: newWindowStart });
     await persist({ entries: newEntries, myXP: newXP, myStreak: newStreak, myName });
     setForm(emptyForm()); setStep(0); setScreen("success"); setSubmitting(false);
     showToast(saveSuccess ? "Synced to Google Sheets!" : "Saved locally (offline)", saveSuccess ? "success" : "warn");
@@ -599,15 +746,22 @@ export default function App() {
   if (myName && myUserId) nameToIdMap[myName.trim().toLowerCase()] = myUserId;
   entries.forEach(e => { if (e.contributor && e.contributorId) nameToIdMap[e.contributor.trim().toLowerCase()] = e.contributorId; });
 
-  const lbMap = entries.reduce((acc, e) => {
+  const lbMap = {};
+  entries.forEach(e => {
     const name    = e.contributor || "Anonymous";
     const nameKey = name.trim().toLowerCase();
     const id      = e.contributorId || nameToIdMap[nameKey] || nameKey;
-    if (!acc[id]) acc[id] = { name, xp: 0, entries: 0 };
-    acc[id].xp     += (Number(e.xpEarned) || XP_PER_ENTRY);
-    acc[id].entries += 1;
-    return acc;
-  }, {});
+    if (!lbMap[id]) lbMap[id] = { name, xp: 0, entries: 0 };
+    lbMap[id].xp     += (Number(e.xpEarned) || XP_PER_ENTRY);
+    lbMap[id].entries += 1;
+  });
+  xpAdjustments.forEach(a => {
+    const name    = a.userName || "Anonymous";
+    const nameKey = name.trim().toLowerCase();
+    const id      = a.userId || nameToIdMap[nameKey] || nameKey;
+    if (!lbMap[id]) lbMap[id] = { name, xp: 0, entries: 0 };
+    lbMap[id].xp     += (Number(a.delta) || 0);
+  });
 
   const lb = Object.entries(lbMap)
     .map(([id, d]) => ({ id, name: d.name, xp: d.xp, entries: d.entries }))
@@ -660,7 +814,24 @@ export default function App() {
 
         <div style={{ padding: "24px 20px" }}>
           {/* Speed Boost Widget */}
-          {myName && <SpeedBoostWidget onClaim={handleClaimSpeedBoost} claimed={boostClaimed} />}
+          {myName && (
+            <SpeedBoostWidget
+              onClaim={handleClaimSpeedBoost}
+              claimed={!!(lastSubmittedRouteId && claimedRouteIds.includes(lastSubmittedRouteId))}
+              hasSubmittedThisSession={hasSubmittedThisSession}
+            />
+          )}
+
+          {/* Daily 50-Routes Booster Widget */}
+          {myName && (
+            <DailyBoostWidget
+              dailyCount={dailyCount}
+              onClaim={handleClaimDailyBoost}
+              dailyBoostClaimed={dailyBoostClaimed}
+              dailyBoostUnlocked={dailyCount >= DAILY_BOOST_TARGET}
+              dailyWindowStart={dailyWindowStart}
+            />
+          )}
 
           {!myName ? (
             <div style={{ background: "#FFFBEB", border: "2px solid #FDE68A", borderRadius: 16, padding: "20px 20px", marginBottom: 24 }}>
@@ -702,7 +873,7 @@ export default function App() {
                 { pts: `+${BONUS.peak}`,   desc: "Include peak fare" },
                 { pts: `+${BONUS.condition}`, desc: "Road/vehicle condition" },
                 { pts: "×2÷1.5",  desc: "Add alt to another's route" },
-                { pts: "×2÷1.2",  desc: "Speed bonus window" },
+                { pts: "+316 XP",  desc: "Speed bonus window" },
               ].map(r => (
                 <div key={r.desc} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{ background: "#DCFCE7", color: "#166534", fontWeight: 800, fontSize: 12, borderRadius: 8, padding: "4px 10px", whiteSpace: "nowrap" }}>{r.pts}</div>
@@ -721,7 +892,10 @@ export default function App() {
             <button onClick={() => setScreen("leaderboard")} style={{ padding: "14px", background: "#0A1F3D", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", borderRadius: 14, cursor: "pointer" }}>🏆 Leaderboard</button>
             <button onClick={() => setScreen("browse")}      style={{ padding: "14px", background: "#7C3AED", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", borderRadius: 14, cursor: "pointer" }}>🗺 Browse Routes</button>
           </div>
-          <button onClick={() => setScreen("rewards")} style={{ width: "100%", padding: "14px", background: "#10B981", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", borderRadius: 14, cursor: "pointer", marginBottom: 20 }}>🎁 View Rewards</button>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+            <button onClick={() => setScreen("rewards")}   style={{ padding: "14px", background: "#10B981", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", borderRadius: 14, cursor: "pointer" }}>🎁 View Rewards</button>
+            <button onClick={() => setScreen("learnMore")} style={{ padding: "14px", background: "#64748B", color: "#fff", fontWeight: 700, fontSize: 15, border: "none", borderRadius: 14, cursor: "pointer" }}>📖 Learn More</button>
+          </div>
 
           {entries.length > 0 && (
             <>
@@ -770,7 +944,11 @@ export default function App() {
           </div>
 
           {/* Speed Boost Widget on success screen */}
-          <SpeedBoostWidget onClaim={handleClaimSpeedBoost} claimed={boostClaimed} />
+          <SpeedBoostWidget
+            onClaim={handleClaimSpeedBoost}
+            claimed={!!(lastSubmittedRouteId && claimedRouteIds.includes(lastSubmittedRouteId))}
+            hasSubmittedThisSession={hasSubmittedThisSession}
+          />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 20 }}>
             <button onClick={() => { setForm(emptyForm()); setStep(0); setScreen("form"); }} style={{ padding: "14px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 12, cursor: "pointer", fontSize: 15 }}>➕ Add Another</button>
@@ -1311,6 +1489,111 @@ export default function App() {
           </div>
         </div>
         {toast && <Toast msg={toast.msg} type={toast.type} />}
+      </div>
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // ── LEARN MORE / GUIDE ────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────────
+  if (screen === "learnMore") {
+    return (
+      <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", maxWidth: 680, margin: "0 auto", padding: "0 0 60px", color: "#1E293B" }}>
+        <div style={{ background: "linear-gradient(135deg, #475569, #334155)", padding: "24px 20px 20px" }}>
+          <button onClick={() => setScreen("home")} style={{ background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 999, cursor: "pointer", marginBottom: 16 }}>← Back</button>
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: 24 }}>📖 Challenge Guide</div>
+          <div style={{ color: "#CBD5E1", fontSize: 13, marginTop: 4 }}>How to participate, log routes, and earn points</div>
+        </div>
+        <div style={{ padding: "20px 20px", lineHeight: 1.6 }}>
+          <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
+            <h3 style={{ margin: "0 0 8px 0", color: "#1E40AF", fontWeight: 800, fontSize: 16 }}>🗺️ What is the Challenge?</h3>
+            <p style={{ margin: 0, fontSize: 14 }}>
+              Lagos transit can be chaotic. Fares fluctuate, routes change, and alternative options aren't always clear. The <strong>Jùrù Ányá Technologies Router Data Collection Challenge</strong> is a crowdsourced initiative to build a comprehensive, high-quality, and up-to-date transit database for Lagos.
+            </p>
+          </div>
+
+          <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>📋 How to Participate & Submit Routes</h3>
+          <div style={{ fontSize: 14, marginBottom: 24 }}>
+            <p>To ensure the data is useful, entries must follow a structured format:</p>
+            <ul style={{ paddingLeft: 20 }}>
+              <li style={{ marginBottom: 10 }}><strong>Step 1: Route & Vehicle Details</strong>: Select origin and destination from our list of major Lagos hubs (e.g. Oshodi, VI, Ikeja). Select all transit modes used (Danfo, BRT, Keke, etc.), and provide standard base, peak, and off-peak fares.</li>
+              <li style={{ marginBottom: 10 }}><strong>Step 2: Stops & Fares</strong>: Add major bus stops in sequence. Input the boarding fare from each stop to the destination to help commuters pay correctly mid-way.</li>
+              <li style={{ marginBottom: 10 }}><strong>Step 3: Timing & Road Conditions</strong>: Tell us when you traveled (weekday/weekend, rush hour) and the road/vehicle quality (potholes, traffic).</li>
+              <li style={{ marginBottom: 10 }}><strong>Step 4: Alternatives</strong>: Document alternative vehicle types or paths for the same route to earn bonus XP.</li>
+            </ul>
+          </div>
+
+          <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>⚡ XP & Point Calculations</h3>
+          <div style={{ fontSize: 14, marginBottom: 24 }}>
+            <p>Every action you take earns you Experience Points (XP):</p>
+            
+            <h4 style={{ margin: "14px 0 6px", fontWeight: 700, fontSize: 15 }}>Base Points</h4>
+            <ul style={{ paddingLeft: 20 }}>
+              <li><strong>Complete route entry</strong>: <span style={{ background: "#DCFCE7", color: "#166534", fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>+120 XP</span></li>
+              <li><strong>Include peak fare</strong>: <span style={{ background: "#DCFCE7", color: "#166534", fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>+20 XP</span></li>
+              <li><strong>Complete road/vehicle condition</strong>: <span style={{ background: "#DCFCE7", color: "#166534", fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>+15 XP</span></li>
+              <li><strong>Add alternative route (as owner)</strong>: <span style={{ background: "#DCFCE7", color: "#166534", fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>+40 XP each</span></li>
+            </ul>
+
+            <h4 style={{ margin: "18px 0 6px", fontWeight: 700, fontSize: 15 }}>Massive Boosters 🚀</h4>
+            <ul style={{ paddingLeft: 20 }}>
+              <li style={{ marginBottom: 10 }}>
+                <strong>Community Alternatives Booster</strong>: Suggest an alternative on another contributor's route to boost your total XP!
+                <div style={{ background: "#F8FAFC", padding: "8px 12px", borderRadius: 8, marginTop: 4, fontStyle: "italic" }}>
+                  New XP = (Current XP × 2) ÷ 1.5
+                </div>
+              </li>
+              <li style={{ marginBottom: 10 }}>
+                <strong>5-Second Speed Boost Window</strong>: A site-wide cyclic timer runs continuously. Every minute, between :00 and :05 seconds, a 5-second speed boost button activates. Click it to earn a flat bonus!
+                <div style={{ background: "#F8FAFC", padding: "8px 12px", borderRadius: 8, marginTop: 4 }}>
+                  Award: <span style={{ color: "#E87722", fontWeight: 700 }}>+316 XP</span> (requires a route submission in the current session)
+                </div>
+              </li>
+              <li style={{ marginBottom: 10 }}>
+                <strong>Daily 50-Routes Challenge Booster</strong>: Complete 50 routes within a 24-hour cycle to unlock a 2× daily booster!
+                <div style={{ background: "#F8FAFC", padding: "8px 12px", borderRadius: 8, marginTop: 4 }}>
+                  Award: <span style={{ color: "#10B981", fontWeight: 700 }}>2× multiplier</span> (doubles your total XP, then refreshes progress to 0/50)
+                </div>
+              </li>
+            </ul>
+
+            <h4 style={{ margin: "18px 0 6px", fontWeight: 700, fontSize: 15 }}>Accuracy Reviews</h4>
+            <ul style={{ paddingLeft: 20 }}>
+              <li><strong>Owner approves your comment (👍)</strong>: Commenter gets <span style={{ color: "#166534", fontWeight: 700 }}>+5 XP</span>, Owner gets <span style={{ color: "#166534", fontWeight: 700 }}>+1 XP</span></li>
+              <li><strong>Owner dismisses your comment (👎)</strong>: Commenter gets <span style={{ color: "#166534", fontWeight: 700 }}>+1 XP</span></li>
+            </ul>
+          </div>
+
+          <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>🏆 Levels & Ranks</h3>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, marginBottom: 24, textAlign: "left" }}>
+            <thead>
+              <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                <th style={{ padding: 8 }}>Level</th>
+                <th style={{ padding: 8 }}>Rank Title</th>
+                <th style={{ padding: 8 }}>XP Threshold</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ borderBottom: "1px solid #E2E8F0" }}><td style={{ padding: 8 }}>1</td><td style={{ padding: 8 }}>🟢 Commuter Rookie</td><td style={{ padding: 8 }}>0 – 199 XP</td></tr>
+              <tr style={{ borderBottom: "1px solid #E2E8F0" }}><td style={{ padding: 8 }}>2</td><td style={{ padding: 8 }}>🔵 Bus Stop Scout</td><td style={{ padding: 8 }}>200 – 499 XP</td></tr>
+              <tr style={{ borderBottom: "1px solid #E2E8F0" }}><td style={{ padding: 8 }}>3</td><td style={{ padding: 8 }}>🟡 Route Explorer</td><td style={{ padding: 8 }}>500 – 999 XP</td></tr>
+              <tr style={{ borderBottom: "1px solid #E2E8F0" }}><td style={{ padding: 8 }}>4</td><td style={{ padding: 8 }}>🟠 Danfo Detective</td><td style={{ padding: 8 }}>1,000 – 1,999 XP</td></tr>
+              <tr style={{ borderBottom: "1px solid #E2E8F0" }}><td style={{ padding: 8 }}>5</td><td style={{ padding: 8 }}>🔴 Lagos Navigator</td><td style={{ padding: 8 }}>2,000 – 3,499 XP</td></tr>
+              <tr style={{ borderBottom: "1px solid #E2E8F0" }}><td style={{ padding: 8 }}>6</td><td style={{ padding: 8 }}>🔥 Transport Legend</td><td style={{ padding: 8 }}>3,500+ XP</td></tr>
+            </tbody>
+          </table>
+
+          <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>🎁 Milestones & Rewards</h3>
+          <div style={{ fontSize: 14 }}>
+            <ul style={{ listStyleType: "none", padding: 0 }}>
+              <li style={{ padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>🐊 <strong>50,000 XP</strong>: Pair of Crocs</li>
+              <li style={{ padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>👓 <strong>100,000 XP</strong>: Photochromic Eyeglasses</li>
+              <li style={{ padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>🎧 <strong>250,000 XP</strong>: Oraimo BoomPop Pro ANC</li>
+              <li style={{ padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>📱 <strong>1,000,000 XP</strong>: Apple iPhone 13 Pro</li>
+              <li style={{ padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>💻 <strong>1,500,000 XP</strong>: Apple MacBook Pro</li>
+            </ul>
+          </div>
+        </div>
       </div>
     );
   }
