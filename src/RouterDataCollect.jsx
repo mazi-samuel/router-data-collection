@@ -37,6 +37,7 @@ const BONUS = { alt: 40, peak: 20, condition: 15 };
 const BOOST = { altOtherDiv: 1.5, speedDiv: 1.2 };
 const COMMENT_XP = { ownerUp: 1, commenterUp: 5, commenterDown: 1 };
 const SPEED_BOOST_FLAT_XP = 316; // Max flat XP award for speed boost
+const ALT_OTHER_FLAT_XP   = 215; // Flat XP award for adding alt to another's route
 const DAILY_BOOST_TARGET  = 50;  // Routes per day to unlock the daily booster
 
 const REWARDS = [
@@ -62,6 +63,9 @@ function applyBoost(xp, divisor) { return Math.round((xp * 2) / divisor); }
 // Speed boost uses flat addition instead of the multiplier formula — math kept below for reference:
 // function applySpeedBoostOld(xp) { return Math.round((xp * 2) / BOOST.speedDiv); }
 function applySpeedBoost(xp) { return xp + SPEED_BOOST_FLAT_XP; }
+// Alternative on other's route uses flat addition instead of the multiplier formula — math kept below for reference:
+// function applyAltOtherBoostOld(xp, divisor) { return Math.round((xp * 2) / divisor); }
+function applyAltOtherBoost(xp) { return xp + ALT_OTHER_FLAT_XP; }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 function VehicleChip({ v, selected, onToggle }) {
@@ -713,10 +717,10 @@ export default function App() {
     const isOwn = route.contributor?.trim().toLowerCase() === myName.trim().toLowerCase() || route.contributorId === myUserId;
     setSubmitting(true);
     try {
-      const r = await apiPost({ action: "addAltToOther", routeId, alt: communityAlt, contributor: myName, contributorId: myUserId, oldXP: myXP, newXP: isOwn ? myXP : applyBoost(myXP, BOOST.altOtherDiv) });
+      const r = await apiPost({ action: "addAltToOther", routeId, alt: communityAlt, contributor: myName, contributorId: myUserId, oldXP: myXP, newXP: isOwn ? myXP : applyAltOtherBoost(myXP) });
       if (r?.success) {
         if (!isOwn && myXP > 0) {
-          const newXP = applyBoost(myXP, BOOST.altOtherDiv);
+          const newXP = applyAltOtherBoost(myXP);
           const boostGain = newXP - myXP;
           setMyXP(newXP);
           await persist({ myXP: newXP });
@@ -1242,8 +1246,8 @@ export default function App() {
               <div style={{ fontSize: 13, color: "#1E3A8A" }}>Please enter your name on the home screen to contribute an alternative route.</div>
             ) : addingAltToRoute === route.id ? (
               <div>
-                {!isOwn && <div style={{ fontSize: 12, color: "#1D4ED8", marginBottom: 12, padding: "8px 12px", background: "rgba(124,58,237,0.1)", borderRadius: 8 }}>
-                  🚀 <strong>Booster XP!</strong> Adding an alt to another contributor's route gives you ×2 ÷ 1.5 of your current XP!
+                 {!isOwn && <div style={{ fontSize: 12, color: "#1D4ED8", marginBottom: 12, padding: "8px 12px", background: "rgba(124,58,237,0.1)", borderRadius: 8 }}>
+                  🚀 <strong>Booster XP!</strong> Adding an alt to another contributor's route earns you +215 XP!
                 </div>}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                   <div><label style={lbl}>📍 Alt. starting point</label><input style={inp} list="areas-list" placeholder={route.from} value={communityAlt.from} onChange={e => setCommunityAlt(a => ({ ...a, from: e.target.value }))} /></div>
@@ -1275,7 +1279,7 @@ export default function App() {
             ) : (
               <button onClick={() => setAddingAltToRoute(route.id)} style={{ width: "100%", padding: "11px", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, border: "2px dashed #BFDBFE", borderRadius: 10, cursor: "pointer", fontSize: 14 }}>
                 + Add a Different Route from {route.from} → {route.to}
-                {!isOwn && myXP > 0 && <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>🚀 Earns Booster XP!</div>}
+                {!isOwn && myXP > 0 && <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>🚀 Earns +215 XP!</div>}
               </button>
             )}
           </div>
@@ -1538,9 +1542,9 @@ export default function App() {
             <h4 style={{ margin: "18px 0 6px", fontWeight: 700, fontSize: 15 }}>Massive Boosters 🚀</h4>
             <ul style={{ paddingLeft: 20 }}>
               <li style={{ marginBottom: 10 }}>
-                <strong>Community Alternatives Booster</strong>: Suggest an alternative on another contributor's route to boost your total XP!
-                <div style={{ background: "#F8FAFC", padding: "8px 12px", borderRadius: 8, marginTop: 4, fontStyle: "italic" }}>
-                  New XP = (Current XP × 2) ÷ 1.5
+                <strong>Community Alternatives Booster</strong>: Suggest an alternative on another contributor's route to earn a flat bonus!
+                <div style={{ background: "#F8FAFC", padding: "8px 12px", borderRadius: 8, marginTop: 4 }}>
+                  Award: <span style={{ color: "#E87722", fontWeight: 700 }}>+215 XP</span>
                 </div>
               </li>
               <li style={{ marginBottom: 10 }}>
