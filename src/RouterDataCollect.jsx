@@ -326,11 +326,13 @@ export default function App() {
       let savedEntries = [];
       const saved = await loadData("router:state");
       let currentUserId = "";
+      let currentName = "";
       if (saved) {
         savedEntries = saved.entries || [];
         setMyXP(saved.myXP || 0);
         setMyStreak(saved.myStreak || 0);
-        setMyName(saved.myName || "");
+        currentName = saved.myName || "";
+        setMyName(currentName);
         currentUserId = saved.myUserId || "";
         setMyUserId(currentUserId);
       }
@@ -350,6 +352,30 @@ export default function App() {
           const serverEntries = Array.isArray(json) ? json : (json.data || json.entries || []);
           if (serverEntries.length > 0) {
             setEntries(serverEntries);
+            
+            // Recalculate myXP/Streak from server entries based on name (case-insensitive)
+            if (currentName) {
+              const myNameClean = currentName.trim().toLowerCase();
+              let calculatedXP = 0;
+              let calculatedStreak = 0;
+              serverEntries.forEach(e => {
+                if (e.contributor && e.contributor.trim().toLowerCase() === myNameClean) {
+                  calculatedXP += (Number(e.xpEarned) || XP_PER_ENTRY);
+                  calculatedStreak++;
+                }
+              });
+              if (calculatedXP > 0) {
+                setMyXP(calculatedXP);
+                setMyStreak(calculatedStreak);
+                await saveData("router:state", {
+                  entries: serverEntries,
+                  myXP: calculatedXP,
+                  myStreak: calculatedStreak,
+                  myName: currentName,
+                  myUserId: currentUserId || (saved ? saved.myUserId : "")
+                });
+              }
+            }
           } else {
             setEntries(savedEntries);
           }
@@ -373,6 +399,36 @@ export default function App() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   }
+
+  const handleSaveName = useCallback(async (n) => {
+    const nameVal = n.trim();
+    if (!nameVal) return;
+    const newId = uid();
+    
+    // Look up historical entries in the fetched list
+    const myNameClean = nameVal.toLowerCase();
+    let calculatedXP = 0;
+    let calculatedStreak = 0;
+    entries.forEach(e => {
+      if (e.contributor && e.contributor.trim().toLowerCase() === myNameClean) {
+        calculatedXP += (Number(e.xpEarned) || XP_PER_ENTRY);
+        calculatedStreak++;
+      }
+    });
+
+    setMyName(nameVal);
+    setMyUserId(newId);
+    setMyXP(calculatedXP);
+    setMyStreak(calculatedStreak);
+    
+    await saveData("router:state", {
+      entries,
+      myXP: calculatedXP,
+      myStreak: calculatedStreak,
+      myName: nameVal,
+      myUserId: newId
+    });
+  }, [entries]);
 
   // ── Form state ────────────────────────────────────────────────────────────
   const emptyForm = () => ({
@@ -490,12 +546,36 @@ export default function App() {
         const serverEntries = Array.isArray(json) ? json : (json.data || json.entries || []);
         if (serverEntries.length > 0) {
           setEntries(serverEntries);
+
+          // Recalculate myXP/Streak from server entries based on name (case-insensitive)
+          if (myName) {
+            const myNameClean = myName.trim().toLowerCase();
+            let calculatedXP = 0;
+            let calculatedStreak = 0;
+            serverEntries.forEach(e => {
+              if (e.contributor && e.contributor.trim().toLowerCase() === myNameClean) {
+                calculatedXP += (Number(e.xpEarned) || XP_PER_ENTRY);
+                calculatedStreak++;
+              }
+            });
+            if (calculatedXP > 0) {
+              setMyXP(calculatedXP);
+              setMyStreak(calculatedStreak);
+              await saveData("router:state", {
+                entries: serverEntries,
+                myXP: calculatedXP,
+                myStreak: calculatedStreak,
+                myName,
+                myUserId
+              });
+            }
+          }
           return true;
         }
       }
     } catch {}
     return false;
-  }, []);
+  }, [myName, myUserId]);
 
   // ── Auto-refresh entries every 60s so all contributors are visible
   useEffect(() => {
@@ -504,13 +584,25 @@ export default function App() {
   }, [fetchServerEntries]);
 
   // ── Leaderboard data ──────────────────────────────────────────────────────
+  // First, find a mapping from contributor name to contributorId
+  const nameToIdMap = {};
+  if (myName && myUserId) {
+    nameToIdMap[myName.trim().toLowerCase()] = myUserId;
+  }
+  entries.forEach(e => {
+    if (e.contributor && e.contributorId) {
+      nameToIdMap[e.contributor.trim().toLowerCase()] = e.contributorId;
+    }
+  });
+
   const lbMap = entries.reduce((acc, e) => {
-    const id = e.contributorId || e.contributor || "Anonymous";
     const name = e.contributor || "Anonymous";
+    const nameKey = name.trim().toLowerCase();
+    const id = e.contributorId || nameToIdMap[nameKey] || nameKey;
     if (!acc[id]) {
       acc[id] = { name, xp: 0, entries: 0 };
     }
-    acc[id].xp += (e.xpEarned || XP_PER_ENTRY);
+    acc[id].xp += (Number(e.xpEarned) || XP_PER_ENTRY);
     acc[id].entries += 1;
     return acc;
   }, {});
@@ -573,10 +665,10 @@ export default function App() {
               <div style={{ fontWeight: 800, fontSize: 16, color: "#92400E", marginBottom: 6 }}>🙋 Who are you?</div>
               <p style={{ fontSize: 13, color: "#78350F", margin: "0 0 14px", lineHeight: 1.5 }}>Enter your name to appear on the leaderboard and track your XP across devices.</p>
               <div style={{ display: "flex", gap: 10 }}>
-                <input style={{ ...inp, flex: 1 }} placeholder="Your name or nickname" value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) { const n = nameInput.trim(); const newId = uid(); setMyName(n); setMyUserId(newId); persist({ myName: n, myUserId: newId }); } }} />
+                <input style={{ ...inp, flex: 1 }} placeholder="Your name or nickname" value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) { handleSaveName(nameInput); } }} />
                 <button
                   disabled={!nameInput.trim()}
-                  onClick={() => { const n = nameInput.trim(); const newId = uid(); setMyName(n); setMyUserId(newId); persist({ myName: n, myUserId: newId }); }}
+                  onClick={() => handleSaveName(nameInput)}
                   style={{ padding: "9px 18px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, opacity: nameInput.trim() ? 1 : 0.5 }}>
                   Save
                 </button>
