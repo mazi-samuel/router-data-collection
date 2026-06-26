@@ -128,33 +128,65 @@ function StopRow({ stop, idx, onChange, onRemove, canRemove }) {
   );
 }
 
-function AltRow({ alt, idx, onChange, onRemove }) {
+function AltRow({ alt, idx, onChange, onRemove, mainFrom, mainTo }) {
   const toggleAltVehicle = (vid) => {
     const list = alt.vehicles || [];
     const newList = list.includes(vid) ? list.filter(x => x !== vid) : [...list, vid];
     onChange(idx, "vehicles", newList);
   };
 
+  function addAltStop() {
+    const stops = [...(alt.stops || [])];
+    stops.push({ name: "", fare: "", note: "" });
+    onChange(idx, "stops", stops);
+  }
+  function removeAltStop(si) {
+    const stops = (alt.stops || []).filter((_, j) => j !== si);
+    onChange(idx, "stops", stops);
+  }
+  function updateAltStop(si, k, v) {
+    const stops = [...(alt.stops || [])];
+    stops[si] = { ...stops[si], [k]: v };
+    onChange(idx, "stops", stops);
+  }
+
+  const altStops = alt.stops || [];
+
   return (
     <div style={{ background: "#F0FDF4", border: "1px dashed #86EFAC", borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontWeight: 700, fontSize: 13, color: "#166534" }}>🔀 Alternative {idx + 1}</span>
+        <span style={{ fontWeight: 700, fontSize: 13, color: "#166534" }}>🔀 Alternative Route {idx + 1}</span>
         <button onClick={() => onRemove(idx)} style={{ background: "none", border: "none", cursor: "pointer", color: "#86EFAC", fontSize: 16 }}>✕</button>
       </div>
 
+      {/* Origin / Destination — may differ from main route */}
+      <div style={{ background: "rgba(255,255,255,0.6)", borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12, color: "#166534" }}>
+        ℹ️ This can be an entirely different path and vehicle — as long as it travels from <strong>{mainFrom || "origin"}</strong> to <strong>{mainTo || "destination"}</strong>.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+        <div>
+          <label style={lbl}>📍 Alt. starting point</label>
+          <input style={inp} list="areas-list" placeholder={mainFrom || "Same as main"} value={alt.from || ""} onChange={e => onChange(idx, "from", e.target.value)} />
+        </div>
+        <div>
+          <label style={lbl}>🏁 Alt. end point</label>
+          <input style={inp} list="areas-list" placeholder={mainTo || "Same as main"} value={alt.to || ""} onChange={e => onChange(idx, "to", e.target.value)} />
+        </div>
+      </div>
+
       <label style={lbl}>🚌 Vehicle type(s) — select all that apply</label>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6, marginBottom: 16 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6, marginBottom: 14 }}>
         {VEHICLES.map(v => (
-          <VehicleChip 
-            key={v.id} 
-            v={v} 
-            selected={(alt.vehicles || []).includes(v.id)} 
-            onToggle={toggleAltVehicle} 
+          <VehicleChip
+            key={v.id}
+            v={v}
+            selected={(alt.vehicles || []).includes(v.id)}
+            onToggle={toggleAltVehicle}
           />
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
         <div>
           <label style={lbl}>Base fare (₦)</label>
           <input style={inp} type="number" min="0" placeholder="e.g. 400" value={alt.fare} onChange={e => onChange(idx, "fare", e.target.value)} />
@@ -167,10 +199,44 @@ function AltRow({ alt, idx, onChange, onRemove }) {
           <label style={lbl}>Off-peak fare (₦)</label>
           <input style={inp} type="number" min="0" placeholder="e.g. 300" value={alt.offPeakFare} onChange={e => onChange(idx, "offPeakFare", e.target.value)} />
         </div>
-        <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
-          <label style={lbl}>Via / notes</label>
-          <input style={inp} placeholder="e.g. drops at Ojota only, faster but pricier" value={alt.note} onChange={e => onChange(idx, "note", e.target.value)} />
-        </div>
+      </div>
+
+      {/* Stops along this alternate route */}
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ ...lbl, marginBottom: 8 }}>🚏 Stops along this alternate route</label>
+        {altStops.length === 0 && (
+          <div style={{ fontSize: 12, color: "#4ADE80", marginBottom: 8, fontStyle: "italic" }}>No stops added yet — tap below to add</div>
+        )}
+        {altStops.map((stop, si) => (
+          <div key={si} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 8 }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#16A34A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, flexShrink: 0, marginTop: 9 }}>{si + 1}</div>
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              <div>
+                <label style={lbl}>Stop name</label>
+                <input style={inp} placeholder="e.g. Ojota Bus Stop" value={stop.name} onChange={e => updateAltStop(si, "name", e.target.value)} list="areas-list" />
+              </div>
+              <div>
+                <label style={lbl}>Fare from here (₦)</label>
+                <input style={inp} type="number" min="0" placeholder="e.g. 200" value={stop.fare} onChange={e => updateAltStop(si, "fare", e.target.value)} />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={lbl}>Notes (optional)</label>
+                <input style={inp} placeholder="e.g. only available in the morning" value={stop.note} onChange={e => updateAltStop(si, "note", e.target.value)} />
+              </div>
+            </div>
+            {altStops.length > 1 && (
+              <button onClick={() => removeAltStop(si)} style={{ marginTop: 8, background: "none", border: "none", cursor: "pointer", color: "#86EFAC", fontSize: 16, padding: "4px 0" }}>✕</button>
+            )}
+          </div>
+        ))}
+        <button onClick={addAltStop} style={{ width: "100%", padding: "8px", background: "rgba(255,255,255,0.5)", color: "#166534", fontWeight: 700, border: "1px dashed #86EFAC", borderRadius: 8, cursor: "pointer", fontSize: 12, marginTop: 4 }}>
+          + Add Stop to This Alternate Route
+        </button>
+      </div>
+
+      <div style={{ marginTop: 8 }}>
+        <label style={lbl}>📝 Via / notes about this route</label>
+        <input style={inp} placeholder="e.g. goes via Oshodi Expressway, faster but pricier" value={alt.note} onChange={e => onChange(idx, "note", e.target.value)} />
       </div>
     </div>
   );
@@ -275,11 +341,18 @@ export default function App() {
         await saveData("router:state", { ...saved, myUserId: currentUserId });
       }
       try {
+        // doGet on the Apps Script handles all GET requests — no ?action=get needed
         const fetchUrl = GOOGLE_SHEETS_URL || "/api/entries";
         const res = await fetch(fetchUrl);
         if (res.ok) {
-          const serverEntries = await res.json();
-          setEntries(serverEntries);
+          const json = await res.json();
+          // Apps Script doGet returns a plain JSON array
+          const serverEntries = Array.isArray(json) ? json : (json.data || json.entries || []);
+          if (serverEntries.length > 0) {
+            setEntries(serverEntries);
+          } else {
+            setEntries(savedEntries);
+          }
         } else {
           setEntries(savedEntries);
         }
@@ -334,7 +407,7 @@ export default function App() {
     setForm(f => { const s = [...f.stops]; s[i] = { ...s[i], [k]: v }; return { ...f, stops: s }; });
   }
 
-  function addAlt() { setForm(f => ({ ...f, alts: [...f.alts, { vehicles: [], fare: "", peakFare: "", offPeakFare: "", note: "" }] })); }
+  function addAlt() { setForm(f => ({ ...f, alts: [...f.alts, { vehicles: [], from: "", to: "", fare: "", peakFare: "", offPeakFare: "", note: "", stops: [] }] })); }
   function removeAlt(i) { setForm(f => ({ ...f, alts: f.alts.filter((_, j) => j !== i) })); }
   function updateAlt(i, k, v) {
     setForm(f => { const a = [...f.alts]; a[i] = { ...a[i], [k]: v }; return { ...f, alts: a }; });
@@ -405,19 +478,45 @@ export default function App() {
     }
   }
 
+  // ── Helper to fetch all entries from server ────────────────────────────────
+  const fetchServerEntries = useCallback(async () => {
+    try {
+      // doGet handles all GETs — just append a cache-bust param
+      const base = GOOGLE_SHEETS_URL || "/api/entries";
+      const fetchUrl = base + (base.includes("?") ? "&" : "?") + "t=" + Date.now();
+      const res = await fetch(fetchUrl);
+      if (res.ok) {
+        const json = await res.json();
+        const serverEntries = Array.isArray(json) ? json : (json.data || json.entries || []);
+        if (serverEntries.length > 0) {
+          setEntries(serverEntries);
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }, []);
+
+  // ── Auto-refresh entries every 60s so all contributors are visible
+  useEffect(() => {
+    const interval = setInterval(fetchServerEntries, 60000);
+    return () => clearInterval(interval);
+  }, [fetchServerEntries]);
+
   // ── Leaderboard data ──────────────────────────────────────────────────────
   const lbMap = entries.reduce((acc, e) => {
     const id = e.contributorId || e.contributor || "Anonymous";
     const name = e.contributor || "Anonymous";
     if (!acc[id]) {
-      acc[id] = { name, xp: 0 };
+      acc[id] = { name, xp: 0, entries: 0 };
     }
     acc[id].xp += (e.xpEarned || XP_PER_ENTRY);
+    acc[id].entries += 1;
     return acc;
   }, {});
 
   const lb = Object.entries(lbMap)
-    .map(([id, data]) => ({ id, name: data.name, xp: data.xp }))
+    .map(([id, data]) => ({ id, name: data.name, xp: data.xp, entries: data.entries }))
     .sort((a, b) => b.xp - a.xp)
     .slice(0, 10);
 
@@ -456,7 +555,7 @@ export default function App() {
             {[
               { label: "Routes logged", val: entries.length, emoji: "📍" },
               { label: "Bus stops", val: entries.reduce((a, e) => a + (e.stops?.length || 0), 0), emoji: "🚏" },
-              { label: "Top XP", val: lb[0] ? lb[0][1].toLocaleString() : "0", emoji: "⭐" }
+              { label: "Top XP", val: lb[0] ? lb[0].xp.toLocaleString() : "0", emoji: "⭐" }
             ].map(s => (
               <div key={s.label} style={{ background: "rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px 14px", textAlign: "center" }}>
                 <div style={{ fontSize: 20 }}>{s.emoji}</div>
@@ -621,7 +720,16 @@ export default function App() {
     return (
       <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", maxWidth: 680, margin: "0 auto", padding: "0 0 60px" }}>
         <div style={{ background: "linear-gradient(135deg, #0A1F3D, #1A3A6C)", padding: "24px 20px 20px" }}>
-          <button onClick={() => setScreen("home")} style={{ background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 999, cursor: "pointer", marginBottom: 16, fontSize: 13 }}>← Back</button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <button onClick={() => setScreen("home")} style={{ background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 999, cursor: "pointer", fontSize: 13 }}>← Back</button>
+            <button
+              onClick={async () => {
+                const ok = await fetchServerEntries();
+                showToast(ok ? "Leaderboard updated!" : "Already up to date", ok ? "success" : "warn");
+              }}
+              style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.3)", color: "#fff", fontWeight: 700, padding: "8px 14px", borderRadius: 999, cursor: "pointer", fontSize: 12 }}
+            >🔄 Refresh</button>
+          </div>
           <div style={{ color: "#fff", fontWeight: 900, fontSize: 24 }}>🏆 Leaderboard</div>
           <div style={{ color: "#93C5FD", fontSize: 13, marginTop: 4 }}>{entries.length} routes logged across all contributors</div>
         </div>
@@ -632,20 +740,29 @@ export default function App() {
               <div style={{ fontSize: 48, marginBottom: 12 }}>🚌</div>
               <div style={{ fontWeight: 700 }}>No entries yet.</div>
               <div style={{ fontSize: 13, marginTop: 4 }}>Be the first to add a route!</div>
+              <button
+                onClick={async () => { const ok = await fetchServerEntries(); showToast(ok ? "Leaderboard updated!" : "No data found yet", ok ? "success" : "warn"); }}
+                style={{ marginTop: 16, padding: "10px 20px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 10, cursor: "pointer", fontSize: 14 }}
+              >🔄 Try Refreshing</button>
             </div>
           ) : lb.map((item, i) => (
             <div key={item.id} style={{
               display: "flex", alignItems: "center", gap: 14,
-              background: item.id === myUserId ? "#FEF9EE" : "#fff",
-              border: item.id === myUserId ? "2px solid #F5A623" : "1px solid #E2E8F0",
+              background: item.id === myUserId ? "#FEF9EE" : (i === 0 ? "#FFFBEB" : "#fff"),
+              border: item.id === myUserId ? "2px solid #F5A623" : (i === 0 ? "2px solid #FDE68A" : "1px solid #E2E8F0"),
               borderRadius: 12, padding: "14px 16px", marginBottom: 10
             }}>
-              <div style={{ fontSize: 22, width: 28, textAlign: "center" }}>{medals[i] || `#${i + 1}`}</div>
+              <div style={{ fontSize: 22, width: 32, textAlign: "center", flexShrink: 0 }}>{medals[i] || `#${i + 1}`}</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: "#1E293B" }}>{item.name} {item.id === myUserId ? "👈 you" : ""}</div>
-                <div style={{ fontSize: 12, color: "#64748B" }}>Level {xpToLevel(item.xp).n} · {xpToLevel(item.xp).title}</div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: "#1E293B" }}>
+                  {item.name} {item.id === myUserId ? <span style={{ background: "#FEF3C7", color: "#92400E", fontSize: 11, fontWeight: 700, borderRadius: 4, padding: "2px 6px", marginLeft: 4 }}>YOU</span> : ""}
+                </div>
+                <div style={{ fontSize: 12, color: "#64748B" }}>Level {xpToLevel(item.xp).n} · {xpToLevel(item.xp).title} · {item.entries} route{item.entries !== 1 ? "s" : ""}</div>
               </div>
-              <div style={{ fontWeight: 800, fontSize: 18, color: "#F5A623" }}>{item.xp.toLocaleString()} <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 400 }}>XP</span></div>
+              <div style={{ fontWeight: 800, fontSize: 18, color: "#F5A623", textAlign: "right" }}>
+                {item.xp.toLocaleString()}
+                <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 400 }}>XP</div>
+              </div>
             </div>
           ))}
 
@@ -946,7 +1063,9 @@ export default function App() {
         {step === 3 && (
           <div>
             <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#166534", lineHeight: 1.6 }}>
-              💡 Know a different vehicle or route that also gets you from <strong>{form.from}</strong> to <strong>{form.to}</strong>? Add it here! Each alternative earns you <strong>+{BONUS.alt} XP</strong>.
+              💡 Know a different vehicle or route that also gets you from <strong>{form.from}</strong> to <strong>{form.to}</strong>? Add it here!
+              An alternative can use a completely different path, vehicle type, and stops — as long as it still reaches the same destination.
+              Each alternative earns you <strong>+{BONUS.alt} XP</strong>.
             </div>
 
             {form.alts.length === 0 && (
@@ -957,7 +1076,7 @@ export default function App() {
               </div>
             )}
 
-            {form.alts.map((alt, i) => <AltRow key={i} alt={alt} idx={i} onChange={updateAlt} onRemove={removeAlt} />)}
+            {form.alts.map((alt, i) => <AltRow key={i} alt={alt} idx={i} onChange={updateAlt} onRemove={removeAlt} mainFrom={form.from} mainTo={form.to} />)}
 
             <button onClick={addAlt} style={{ width: "100%", padding: "13px", background: "#F0FDF4", color: "#166534", fontWeight: 700, border: "2px dashed #86EFAC", borderRadius: 12, cursor: "pointer", fontSize: 15, marginBottom: 24 }}>
               🔀 Add Alternative Route / Vehicle
