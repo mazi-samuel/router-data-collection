@@ -1505,20 +1505,22 @@ export default function App() {
       <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", maxWidth: 680, margin: "0 auto", padding: "0 0 60px", color: "#1E293B" }}>
         <div style={{ background: "linear-gradient(135deg, #475569, #334155)", padding: "24px 20px 20px" }}>
           <button onClick={() => setScreen("home")} style={{ background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 999, cursor: "pointer", marginBottom: 16 }}>← Back</button>
-          <div style={{ color: "#fff", fontWeight: 900, fontSize: 24 }}>📖 Challenge Guide</div>
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: 24 }}>📖 Welcome to the Challenge</div>
           <div style={{ color: "#CBD5E1", fontSize: 13, marginTop: 4 }}>How to participate, log routes, and earn points</div>
         </div>
         <div style={{ padding: "20px 20px", lineHeight: 1.6 }}>
+          {/* Hiding the 'What is the Challenge?' section for now - can toggle back on later
           <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
             <h3 style={{ margin: "0 0 8px 0", color: "#1E40AF", fontWeight: 800, fontSize: 16 }}>🗺️ What is the Challenge?</h3>
             <p style={{ margin: 0, fontSize: 14 }}>
               Lagos transit can be chaotic. Fares fluctuate, routes change, and alternative options aren't always clear. The <strong>Jùrù Ányá Technologies Router Data Collection Challenge</strong> is a crowdsourced initiative to build a comprehensive, high-quality, and up-to-date transit database for Lagos.
             </p>
           </div>
+          */}
 
           <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>📋 How to Participate & Submit Routes</h3>
           <div style={{ fontSize: 14, marginBottom: 24 }}>
-            <p>To ensure the data is useful, entries must follow a structured format:</p>
+            <p>{/* To ensure the data is useful, */}entries must follow a structured format:</p>
             <ul style={{ paddingLeft: 20 }}>
               <li style={{ marginBottom: 10 }}><strong>Step 1: Route & Vehicle Details</strong>: Select origin and destination from our list of major Lagos hubs (e.g. Oshodi, VI, Ikeja). Select all transit modes used (Danfo, BRT, Keke, etc.), and provide standard base, peak, and off-peak fares.</li>
               <li style={{ marginBottom: 10 }}><strong>Step 2: Stops & Fares</strong>: Add major bus stops in sequence. Input the boarding fare from each stop to the destination to help commuters pay correctly mid-way.</li>
