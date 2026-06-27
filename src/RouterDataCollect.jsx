@@ -746,29 +746,35 @@ export default function App() {
   }
 
   // ── Leaderboard data ──────────────────────────────────────────────────────
-  const nameToIdMap = {};
-  if (myName && myUserId) nameToIdMap[myName.trim().toLowerCase()] = myUserId;
-  entries.forEach(e => { if (e.contributor && e.contributorId) nameToIdMap[e.contributor.trim().toLowerCase()] = e.contributorId; });
-
   const lbMap = {};
   entries.forEach(e => {
     const name    = e.contributor || "Anonymous";
     const nameKey = name.trim().toLowerCase();
-    const id      = e.contributorId || nameToIdMap[nameKey] || nameKey;
-    if (!lbMap[id]) lbMap[id] = { name, xp: 0, entries: 0 };
-    lbMap[id].xp     += (Number(e.xpEarned) || XP_PER_ENTRY);
-    lbMap[id].entries += 1;
+    if (!lbMap[nameKey]) {
+      lbMap[nameKey] = { name, xp: 0, entries: 0, ids: new Set() };
+    }
+    lbMap[nameKey].xp     += (Number(e.xpEarned) || XP_PER_ENTRY);
+    lbMap[nameKey].entries += 1;
+    if (e.contributorId) lbMap[nameKey].ids.add(e.contributorId);
   });
   xpAdjustments.forEach(a => {
     const name    = a.userName || "Anonymous";
     const nameKey = name.trim().toLowerCase();
-    const id      = a.userId || nameToIdMap[nameKey] || nameKey;
-    if (!lbMap[id]) lbMap[id] = { name, xp: 0, entries: 0 };
-    lbMap[id].xp     += (Number(a.delta) || 0);
+    if (!lbMap[nameKey]) {
+      lbMap[nameKey] = { name, xp: 0, entries: 0, ids: new Set() };
+    }
+    lbMap[nameKey].xp     += (Number(a.delta) || 0);
+    if (a.userId) lbMap[nameKey].ids.add(a.userId);
   });
 
   const lb = Object.entries(lbMap)
-    .map(([id, d]) => ({ id, name: d.name, xp: d.xp, entries: d.entries }))
+    .map(([nameKey, d]) => ({ 
+      id: Array.from(d.ids)[0] || nameKey, 
+      ids: Array.from(d.ids),
+      name: d.name, 
+      xp: d.xp, 
+      entries: d.entries 
+    }))
     .sort((a, b) => b.xp - a.xp)
     .slice(0, 10);
 
@@ -986,26 +992,29 @@ export default function App() {
               <div style={{ fontWeight: 700 }}>No entries yet.</div>
               <button onClick={() => fetchAll(myName, myUserId)} style={{ marginTop: 16, padding: "10px 20px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 10, cursor: "pointer" }}>🔄 Try Refreshing</button>
             </div>
-          ) : lb.map((item, i) => (
-            <div key={item.id} style={{
-              display: "flex", alignItems: "center", gap: 14,
-              background: item.id === myUserId || item.name.trim().toLowerCase() === myName.trim().toLowerCase() ? "#FEF9EE" : (i === 0 ? "#FFFBEB" : "#fff"),
-              border: item.id === myUserId || item.name.trim().toLowerCase() === myName.trim().toLowerCase() ? "2px solid #F5A623" : (i === 0 ? "2px solid #FDE68A" : "1px solid #E2E8F0"),
-              borderRadius: 12, padding: "14px 16px", marginBottom: 10
-            }}>
-              <div style={{ fontSize: 22, width: 32, textAlign: "center", flexShrink: 0 }}>{medals[i] || `#${i + 1}`}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: "#1E293B" }}>
-                  {item.name}
-                  {(item.id === myUserId || item.name.trim().toLowerCase() === myName.trim().toLowerCase()) && <span style={{ background: "#FEF3C7", color: "#92400E", fontSize: 11, fontWeight: 700, borderRadius: 4, padding: "2px 6px", marginLeft: 4 }}>YOU</span>}
+          ) : lb.map((item, i) => {
+            const isMe = item.ids?.includes(myUserId) || item.name.trim().toLowerCase() === myName.trim().toLowerCase();
+            return (
+              <div key={item.id} style={{
+                display: "flex", alignItems: "center", gap: 14,
+                background: isMe ? "#FEF9EE" : (i === 0 ? "#FFFBEB" : "#fff"),
+                border: isMe ? "2px solid #F5A623" : (i === 0 ? "2px solid #FDE68A" : "1px solid #E2E8F0"),
+                borderRadius: 12, padding: "14px 16px", marginBottom: 10
+              }}>
+                <div style={{ fontSize: 22, width: 32, textAlign: "center", flexShrink: 0 }}>{medals[i] || `#${i + 1}`}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "#1E293B" }}>
+                    {item.name}
+                    {isMe && <span style={{ background: "#FEF3C7", color: "#92400E", fontSize: 11, fontWeight: 700, borderRadius: 4, padding: "2px 6px", marginLeft: 4 }}>YOU</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748B" }}>Level {xpToLevel(item.xp).n} · {xpToLevel(item.xp).title} · {item.entries} route{item.entries !== 1 ? "s" : ""}</div>
                 </div>
-                <div style={{ fontSize: 12, color: "#64748B" }}>Level {xpToLevel(item.xp).n} · {xpToLevel(item.xp).title} · {item.entries} route{item.entries !== 1 ? "s" : ""}</div>
+                <div style={{ fontWeight: 800, fontSize: 18, color: "#F5A623", textAlign: "right" }}>
+                  {item.xp.toLocaleString()}<div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 400 }}>XP</div>
+                </div>
               </div>
-              <div style={{ fontWeight: 800, fontSize: 18, color: "#F5A623", textAlign: "right" }}>
-                {item.xp.toLocaleString()}<div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 400 }}>XP</div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           <button onClick={() => setScreen("home")} style={{ width: "100%", marginTop: 16, padding: "14px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 12, cursor: "pointer" }}>➕ Add a Route</button>
         </div>
         {toast && <Toast msg={toast.msg} type={toast.type} />}
