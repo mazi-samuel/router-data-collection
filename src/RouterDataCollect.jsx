@@ -29,8 +29,8 @@ const VEHICLES = [
 ];
 
 const AREAS = ["Oshodi","VI","Lekki","Ajah","Ikeja","Yaba","Surulere","CMS/TBS","Ojota","Ketu","Maryland","Mile 2","Apapa","Ikorodu","Berger","Agege","Mushin","Ojuelegba","Festac","Alaba","Sangotedo","Badore","Epe","Okokomaiko","Ipaja","Egbeda","Abule Egba","Iyana Ipaja","Orile","Eko Atlantic"];
-const TIMES  = ["Early Morning (5–7am)","Morning Rush (7–9am)","Mid Morning (9–11am)","Afternoon (11am–2pm)","Mid Afternoon (2–4pm)","Evening Rush (4–7pm)","Evening (7–9pm)","Night (9pm+)"];
-const DAYS   = ["Weekday (Mon–Fri)","Saturday","Sunday","Public Holiday"];
+const TIMES  = ["All Times / Always same fare","Early Morning (5–7am)","Morning Rush (7–9am)","Mid Morning (9–11am)","Afternoon (11am–2pm)","Mid Afternoon (2–4pm)","Evening Rush (4–7pm)","Evening (7–9pm)","Night (9pm+)"];
+const DAYS   = ["All Days / Every Day","Weekday (Mon–Fri)","Saturday","Sunday","Public Holiday"];
 
 const XP_PER_ENTRY = 120;
 const BONUS = { alt: 40, peak: 20, condition: 15 };
@@ -386,9 +386,9 @@ export default function App() {
     vehicles: [], baseFare: "", peakFare: "", offPeakFare: "",
     negotiable: false, negotiateTip: "", dayType: "", timeOfDay: "",
     stops: [{ name: "", fare: "", note: "" }], alts: [],
-    condition: "", notes: "", landmark: "", ts: new Date().toISOString()
+    condition: "", securityHint: "", notes: "", landmark: "", ts: new Date().toISOString()
   }), [myName]);
-  const [form, setForm]   = useState(() => ({ id: uid(), contributor: "", from: "", to: "", vehicles: [], baseFare: "", peakFare: "", offPeakFare: "", negotiable: false, negotiateTip: "", dayType: "", timeOfDay: "", stops: [{ name: "", fare: "", note: "" }], alts: [], condition: "", notes: "", landmark: "", ts: new Date().toISOString() }));
+  const [form, setForm]   = useState(() => ({ id: uid(), contributor: "", from: "", to: "", vehicles: [], baseFare: "", peakFare: "", offPeakFare: "", negotiable: false, negotiateTip: "", dayType: "", timeOfDay: "", stops: [{ name: "", fare: "", note: "" }], alts: [], condition: "", securityHint: "", notes: "", landmark: "", ts: new Date().toISOString() }));
   const [step, setStep]   = useState(0);
   const STEPS = ["Route & Vehicle", "Stops & Fares", "Timing & Conditions", "Alternatives"];
   // ── edit form state ────────────────────────────────────────────────────────
@@ -1144,7 +1144,7 @@ export default function App() {
                     {isOwn && (
                       <button onClick={() => {
                         setEditingEntry(e);
-                        setEditForm({ ...e, stops: Array.isArray(e.stops) ? e.stops : [], alts: Array.isArray(e.alts) ? e.alts : [], vehicles: Array.isArray(e.vehicles) ? e.vehicles : [] });
+                        setEditForm({ ...e, stops: Array.isArray(e.stops) ? e.stops : [], alts: Array.isArray(e.alts) ? e.alts : [], vehicles: Array.isArray(e.vehicles) ? e.vehicles : [], securityHint: e.securityHint || "" });
                         setPendingThumbsUp(null); setEditStep(0); setScreen("editEntry");
                       }} style={{ padding: "6px 12px", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, border: "1px solid #BFDBFE", borderRadius: 8, cursor: "pointer", fontSize: 12 }}>✏️ Edit</button>
                     )}
@@ -1177,7 +1177,7 @@ export default function App() {
         <div style={{ background: "linear-gradient(135deg, #0A1F3D, #1A3A6C)", padding: "24px 20px 20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <button onClick={() => { setScreen("browse"); setViewingRoute(null); }} style={{ background: "rgba(255,255,255,.15)", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 999, cursor: "pointer" }}>← Back</button>
-            {isOwn && <button onClick={() => { setEditingEntry(route); setEditForm({ ...route, stops: Array.isArray(route.stops) ? route.stops : [], alts: Array.isArray(route.alts) ? route.alts : [], vehicles: Array.isArray(route.vehicles) ? route.vehicles : [] }); setPendingThumbsUp(null); setEditStep(0); setScreen("editEntry"); }}
+            {isOwn && <button onClick={() => { setEditingEntry(route); setEditForm({ ...route, stops: Array.isArray(route.stops) ? route.stops : [], alts: Array.isArray(route.alts) ? route.alts : [], vehicles: Array.isArray(route.vehicles) ? route.vehicles : [], securityHint: route.securityHint || "" }); setPendingThumbsUp(null); setEditStep(0); setScreen("editEntry"); }}
               style={{ background: "#F5A623", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 999, cursor: "pointer", fontSize: 13 }}>✏️ Edit Route</button>}
           </div>
           <div style={{ color: "#fff", fontWeight: 900, fontSize: 22 }}>{route.from} → {route.to}</div>
@@ -1201,6 +1201,17 @@ export default function App() {
             </div>
             {route.dayType && <div style={{ marginTop: 10, fontSize: 12, color: "#64748B" }}>📅 {route.dayType}{route.timeOfDay ? ` · ${route.timeOfDay}` : ""}</div>}
             {route.condition && <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>🛣️ {route.condition}</div>}
+            {route.securityHint && (
+              <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>
+                🛡️ <strong>Safety Hint:</strong> {
+                  route.securityHint === "safe-anytime" ? "Safe at all times" :
+                  route.securityHint === "caution-nights" ? "Caution: Avoid late nights / dark hours" :
+                  route.securityHint === "caution-pickpockets" ? "Caution: High pickpocket area" :
+                  route.securityHint === "caution-robbery" ? "Caution: Frequent traffic robberies / one-chance risk" :
+                  route.securityHint === "high-risk" ? "High Risk — travel with extreme caution" : route.securityHint
+                }
+              </div>
+            )}
             {route.notes && <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>📝 {route.notes}</div>}
           </div>
 
@@ -1452,6 +1463,17 @@ export default function App() {
                   <option value="vehicle-full">Vehicle usually very full/overloaded</option>
                 </select>
               </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={lbl}>🛡️ Route security / safety hint</label>
+                <select style={inp} value={editForm.securityHint} onChange={e => setEF("securityHint", e.target.value)}>
+                  <option value="">Select if applicable…</option>
+                  <option value="safe-anytime">Safe at all times</option>
+                  <option value="caution-nights">Caution: Avoid late nights / dark hours</option>
+                  <option value="caution-pickpockets">Caution: High pickpocket area</option>
+                  <option value="caution-robbery">Caution: Frequent traffic robberies / one-chance risk</option>
+                  <option value="high-risk">High Risk — travel with extreme caution</option>
+                </select>
+              </div>
               <div><label style={lbl}>📝 Any other notes</label><textarea style={{ ...inp, height: 80, resize: "vertical" }} value={editForm.notes} onChange={e => setEF("notes", e.target.value)} /></div>
             </div>
           )}
@@ -1679,6 +1701,17 @@ export default function App() {
                 <option value="flooded">Flooded / impassable sections</option>
                 <option value="under-construction">Under construction</option>
                 <option value="vehicle-full">Vehicle usually very full/overloaded</option>
+              </select>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={lbl}>🛡️ Route security / safety hint</label>
+              <select style={inp} value={form.securityHint} onChange={e => setF("securityHint", e.target.value)}>
+                <option value="">Select if applicable…</option>
+                <option value="safe-anytime">Safe at all times</option>
+                <option value="caution-nights">Caution: Avoid late nights / dark hours</option>
+                <option value="caution-pickpockets">Caution: High pickpocket area</option>
+                <option value="caution-robbery">Caution: Frequent traffic robberies / one-chance risk</option>
+                <option value="high-risk">High Risk — travel with extreme caution</option>
               </select>
             </div>
             <div><label style={lbl}>📝 Any other notes</label><textarea style={{ ...inp, height: 80, resize: "vertical" }} placeholder="e.g. Danfo only runs in the morning. After 7pm, take keke." value={form.notes} onChange={e => setF("notes", e.target.value)} /></div>

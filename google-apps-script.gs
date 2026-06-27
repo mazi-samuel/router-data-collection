@@ -64,7 +64,7 @@ function handleSubmit(ss, data) {
   var routesSheet = getOrCreateSheet(ss, ROUTES_SHEET, [
     "id", "contributor", "contributorId", "from", "to", "vehicles",
     "baseFare", "peakFare", "offPeakFare", "negotiable",
-    "negotiateTip", "dayType", "timeOfDay", "condition",
+    "negotiateTip", "dayType", "timeOfDay", "condition", "securityHint",
     "notes", "landmark", "timestamp", "ts", "xpEarned"
   ]);
   writeRouteRow(routesSheet, data);
@@ -99,6 +99,7 @@ function handleEdit(ss, data) {
     "dayType":     data.dayType      || "",
     "timeOfDay":   data.timeOfDay    || "",
     "condition":   data.condition    || "",
+    "securityHint":data.securityHint || "",
     "notes":       data.notes        || "",
     "landmark":    data.landmark     || "",
     "ts":          new Date().toISOString(),
@@ -382,7 +383,7 @@ function writeRouteRow(routesSheet, data) {
     "negotiable": data.negotiable ? "TRUE" : "FALSE",
     "negotiateTip": data.negotiateTip || "",
     "dayType": data.dayType || "", "timeOfDay": data.timeOfDay || "",
-    "condition": data.condition || "", "notes": data.notes || "",
+    "condition": data.condition || "", "securityHint": data.securityHint || "", "notes": data.notes || "",
     "landmark": data.landmark || "",
     "timestamp": data.ts || new Date().toISOString(),
     "ts": data.ts || new Date().toISOString(),
