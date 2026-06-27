@@ -429,11 +429,9 @@ export default function App() {
       if (name) {
         const totalXP = computeMyXP(serverEntries, serverAdj, name, userId);
         const streak = serverEntries.filter(e => (e.contributor || "").trim().toLowerCase() === (name || "").trim().toLowerCase()).length;
-        if (totalXP > 0) {
-          setMyXP(totalXP);
-          setMyStreak(streak);
-          await saveData("router:state", { entries: serverEntries, myXP: totalXP, myStreak: streak, myName: name, myUserId: userId });
-        }
+        setMyXP(totalXP);
+        setMyStreak(streak);
+        await saveData("router:state", { entries: serverEntries, myXP: totalXP, myStreak: streak, myName: name, myUserId: userId });
       }
       return serverEntries;
     } catch {
@@ -466,19 +464,7 @@ export default function App() {
         setLastSubmittedRouteId(sbSaved.lastSubmittedRouteId || "");
         setClaimedRouteIds(sbSaved.claimedRouteIds || []);
       }
-      // ── Load daily booster state, reset if 24h window has expired ─────────
-      const dailySaved = await loadData("router:daily");
-      if (dailySaved) {
-        const now = Date.now();
-        const windowStart = dailySaved.windowStart || 0;
-        if (now - windowStart < 24 * 60 * 60 * 1000) {
-          // Still within today's 24h window
-          setDailyCount(dailySaved.dailyCount || 0);
-          setDailyBoostClaimed(dailySaved.dailyBoostClaimed || false);
-          setDailyWindowStart(windowStart);
-        }
-        // else: window expired, daily state stays at default 0
-      }
+      // ── Daily booster state is computed dynamically from server data below ─
       await fetchAll(currentName, currentUserId, true);
       setLoading(false);
     })();
@@ -489,6 +475,71 @@ export default function App() {
     const id = setInterval(() => fetchAll(myName, myUserId, true), 60000);
     return () => clearInterval(id);
   }, [myName, myUserId, fetchAll]);
+
+  // ── Dynamically compute daily booster progress from server data ────────────
+  useEffect(() => {
+    if (!myName) {
+      setDailyCount(0);
+      setDailyWindowStart(null);
+      setDailyBoostClaimed(false);
+      return;
+    }
+    const nameKey = myName.trim().toLowerCase();
+    
+    // 1. Find the latest "DAILY_50_BOOST" timestamp for this user
+    let lastBoostTime = 0;
+    xpAdjustments.forEach(a => {
+      if ((a.userName || "").trim().toLowerCase() === nameKey && a.type === "DAILY_50_BOOST") {
+        const t = new Date(a.ts || 0).getTime();
+        if (t > lastBoostTime) lastBoostTime = t;
+      }
+    });
+
+    // 2. Get all routes submitted by this contributor after lastBoostTime, sorted by time ascending
+    const userSubmissions = entries
+      .filter(e => (e.contributor || "").trim().toLowerCase() === nameKey)
+      .map(e => ({ ...e, time: new Date(e.ts || e.timestamp || 0).getTime() }))
+      .filter(e => e.time > lastBoostTime)
+      .sort((a, b) => a.time - b.time);
+
+    if (userSubmissions.length === 0) {
+      setDailyCount(0);
+      setDailyWindowStart(null);
+      setDailyBoostClaimed(false);
+      return;
+    }
+
+    const now = Date.now();
+    let idx = 0;
+    let foundActive = false;
+
+    while (idx < userSubmissions.length) {
+      const windowStart = userSubmissions[idx].time;
+      const windowEnd = windowStart + 24 * 60 * 60 * 1000;
+      
+      let count = 0;
+      let nextIdx = idx;
+      while (nextIdx < userSubmissions.length && userSubmissions[nextIdx].time < windowEnd) {
+        count++;
+        nextIdx++;
+      }
+
+      if (now < windowEnd) {
+        setDailyCount(count);
+        setDailyWindowStart(windowStart);
+        setDailyBoostClaimed(count >= DAILY_BOOST_TARGET);
+        foundActive = true;
+        break;
+      }
+      idx = nextIdx;
+    }
+
+    if (!foundActive) {
+      setDailyCount(0);
+      setDailyWindowStart(null);
+      setDailyBoostClaimed(false);
+    }
+  }, [entries, xpAdjustments, myName]);
 
   const persist = useCallback(async (updates) => {
     const state = { entries, myXP, myStreak, myName, myUserId, ...updates };
@@ -504,8 +555,30 @@ export default function App() {
   const handleSaveName = useCallback(async (n) => {
     const nameVal = n.trim();
     if (!nameVal) return;
-    const newId = uid();
     const nameKey = nameVal.toLowerCase();
+
+    // Look for an existing contributorId in the historical routes
+    let existingId = "";
+    for (let i = 0; i < entries.length; i++) {
+      const entryName = (entries[i].contributor || "").trim().toLowerCase();
+      if (entryName === nameKey && entries[i].contributorId) {
+        existingId = entries[i].contributorId;
+        break;
+      }
+    }
+    
+    // Look for an existing userId in adjustments
+    if (!existingId) {
+      for (let i = 0; i < xpAdjustments.length; i++) {
+        const adjName = (xpAdjustments[i].userName || "").trim().toLowerCase();
+        if (adjName === nameKey && xpAdjustments[i].userId) {
+          existingId = xpAdjustments[i].userId;
+          break;
+        }
+      }
+    }
+
+    const finalId = existingId || uid();
     let xp = 0, streak = 0;
     entries.forEach(e => {
       if ((e.contributor || "").trim().toLowerCase() === nameKey) {
@@ -513,9 +586,15 @@ export default function App() {
         streak++;
       }
     });
-    setMyName(nameVal); setMyUserId(newId); setMyXP(xp); setMyStreak(streak);
-    await saveData("router:state", { entries, myXP: xp, myStreak: streak, myName: nameVal, myUserId: newId });
-  }, [entries]);
+
+    const adjXP = xpAdjustments
+      .filter(a => (a.userId && a.userId === finalId) || (a.userName || "").trim().toLowerCase() === nameKey)
+      .reduce((sum, a) => sum + (Number(a.delta) || 0), 0);
+    const totalXP = xp + adjXP;
+
+    setMyName(nameVal); setMyUserId(finalId); setMyXP(totalXP); setMyStreak(streak);
+    await saveData("router:state", { entries, myXP: totalXP, myStreak: streak, myName: nameVal, myUserId: finalId });
+  }, [entries, xpAdjustments]);
 
   // ── Speed Boost claim (flat +316 XP, requires a submission this session) ───
   const handleClaimSpeedBoost = useCallback(async () => {
@@ -546,7 +625,10 @@ export default function App() {
     await persist({ myXP: newXP });
     await saveData("router:daily", { dailyCount: 0, dailyBoostClaimed: false, windowStart: dailyWindowStart });
     try {
-      await apiPost({ action: "xpAdjust", userId: myUserId, userName: myName, type: "DAILY_50_BOOST", oldXP: myXP, newXP, delta, reason: "Daily 50-routes challenge booster claimed" });
+      const res = await apiPost({ action: "xpAdjust", userId: myUserId, userName: myName, type: "DAILY_50_BOOST", oldXP: myXP, newXP, delta, reason: "Daily 50-routes challenge booster claimed" });
+      if (res?.success) {
+        setXpAdjustments(prev => [...prev, { userId: myUserId, userName: myName, type: "DAILY_50_BOOST", oldXP: myXP, newXP, delta, reason: "Daily 50-routes challenge booster claimed", ts: new Date().toISOString() }]);
+      }
     } catch {}
     showToast(`🚀 Daily 2× Boost! +${delta.toLocaleString()} XP`);
   }, [dailyCount, dailyWindowStart, myXP, myName, myUserId, persist]);
