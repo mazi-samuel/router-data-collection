@@ -354,6 +354,7 @@ export default function App() {
   const [myName, setMyName]       = useState("");
   const [myUserId, setMyUserId]   = useState("");
   const [nameInput, setNameInput] = useState("");
+  const [recoveryInput, setRecoveryInput] = useState("");
   // ── UI state ──────────────────────────────────────────────────────────────
   const [loading, setLoading]     = useState(true);
   const [toast, setToast]         = useState(null);
@@ -552,33 +553,46 @@ export default function App() {
   }
 
   // ── Save name (looks up historical XP from fetched entries) ───────────────
-  const handleSaveName = useCallback(async (n) => {
+  const handleSaveName = useCallback(async (n, recoveryCode = "") => {
     const nameVal = n.trim();
     if (!nameVal) return;
     const nameKey = nameVal.toLowerCase();
+    const cleanRecovery = recoveryCode.trim();
 
     // Look for an existing contributorId in the historical routes
-    let existingId = "";
+    let registeredId = "";
     for (let i = 0; i < entries.length; i++) {
       const entryName = (entries[i].contributor || "").trim().toLowerCase();
       if (entryName === nameKey && entries[i].contributorId) {
-        existingId = entries[i].contributorId;
+        registeredId = entries[i].contributorId;
         break;
       }
     }
     
     // Look for an existing userId in adjustments
-    if (!existingId) {
+    if (!registeredId) {
       for (let i = 0; i < xpAdjustments.length; i++) {
         const adjName = (xpAdjustments[i].userName || "").trim().toLowerCase();
         if (adjName === nameKey && xpAdjustments[i].userId) {
-          existingId = xpAdjustments[i].userId;
+          registeredId = xpAdjustments[i].userId;
           break;
         }
       }
     }
 
-    const finalId = existingId || uid();
+    // Verify recovery code matches if name is registered
+    if (registeredId) {
+      if (!cleanRecovery) {
+        showToast("This name is already registered. Please enter your Contributor ID to continue.", "warn");
+        return;
+      }
+      if (cleanRecovery !== registeredId) {
+        showToast("Incorrect Contributor ID for this name.", "warn");
+        return;
+      }
+    }
+
+    const finalId = registeredId || cleanRecovery || uid();
     let xp = 0, streak = 0;
     entries.forEach(e => {
       if ((e.contributor || "").trim().toLowerCase() === nameKey) {
@@ -593,7 +607,9 @@ export default function App() {
     const totalXP = xp + adjXP;
 
     setMyName(nameVal); setMyUserId(finalId); setMyXP(totalXP); setMyStreak(streak);
+    setRecoveryInput("");
     await saveData("router:state", { entries, myXP: totalXP, myStreak: streak, myName: nameVal, myUserId: finalId });
+    showToast(`Logged in as ${nameVal}`);
   }, [entries, xpAdjustments]);
 
   // ── Speed Boost claim (flat +316 XP, requires a submission this session) ───
@@ -929,10 +945,15 @@ export default function App() {
             <div style={{ background: "#FFFBEB", border: "2px solid #FDE68A", borderRadius: 16, padding: "20px 20px", marginBottom: 24 }}>
               <div style={{ fontWeight: 800, fontSize: 16, color: "#92400E", marginBottom: 6 }}>🙋 Who are you?</div>
               <p style={{ fontSize: 13, color: "#78350F", margin: "0 0 14px", lineHeight: 1.5 }}>Enter your name to appear on the leaderboard and track your XP across devices.</p>
-              <div style={{ display: "flex", gap: 10 }}>
-                <input style={{ ...inp, flex: 1 }} placeholder="Your name or nickname" value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) handleSaveName(nameInput); }} />
-                <button disabled={!nameInput.trim()} onClick={() => handleSaveName(nameInput)} style={{ padding: "9px 18px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, opacity: nameInput.trim() ? 1 : 0.5 }}>Save</button>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "#92400E", display: "block", marginBottom: 4 }}>Your Name / Nickname</label>
+                <input style={inp} placeholder="Your name or nickname" value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) handleSaveName(nameInput, recoveryInput); }} />
               </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "#92400E", display: "block", marginBottom: 4 }}>Contributor ID <span style={{ fontWeight: 400, color: "#B45309" }}>(Optional recovery code to link another device)</span></label>
+                <input style={{ ...inp, fontFamily: "monospace" }} placeholder="e.g. 8g4hj2a" value={recoveryInput} onChange={e => setRecoveryInput(e.target.value)} />
+              </div>
+              <button disabled={!nameInput.trim()} onClick={() => handleSaveName(nameInput, recoveryInput)} style={{ width: "100%", padding: "12px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 10, cursor: nameInput.trim() ? "pointer" : "not-allowed", fontSize: 14, opacity: nameInput.trim() ? 1 : 0.5 }}>Save & Continue</button>
             </div>
           ) : (
             <div style={{ background: "linear-gradient(135deg, #0A1F3D, #1A3A6C)", borderRadius: 16, padding: "18px 20px", marginBottom: 24, color: "#fff" }}>
@@ -952,6 +973,11 @@ export default function App() {
                 <div style={{ height: "100%", width: pct + "%", background: "#F5A623", borderRadius: 3, transition: "width 1s ease" }} />
               </div>
               <div style={{ fontSize: 11, color: "#93C5FD", marginTop: 6 }}>{pct}% to Level {myLevel.n + 1}</div>
+              
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.1)", fontSize: 11, color: "#93C5FD" }}>
+                <span>🔑 Contributor ID: <strong style={{ color: "#fff", fontFamily: "monospace" }}>{myUserId}</strong></span>
+                <button onClick={() => { navigator.clipboard.writeText(myUserId); showToast("Copied Contributor ID!"); }} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", padding: "2px 8px", borderRadius: 4, cursor: "pointer", fontSize: 10, fontWeight: 700 }}>Copy Code</button>
+              </div>
             </div>
           )}
 
