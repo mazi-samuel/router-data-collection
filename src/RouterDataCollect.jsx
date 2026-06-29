@@ -6,6 +6,7 @@ import glassesImg from "./assets/glasses.jpg";
 import crocsImg from "./assets/crocs.jpg";
 
 const GOOGLE_SHEETS_URL = import.meta.env.VITE_GOOGLE_SHEETS_URL || "";
+const ROUTER_API_KEY = import.meta.env.VITE_ROUTER_API_KEY || "";
 
 // ── Storage helpers ──────────────────────────────────────────────────────────
 async function loadData(key) {
@@ -326,7 +327,10 @@ function DailyBoostWidget({ dailyCount, onClaim, dailyBoostClaimed, dailyBoostUn
 // ── API helpers ────────────────────────────────────────────────────────────────
 async function apiGet(action) {
   const base = GOOGLE_SHEETS_URL || "/api/entries";
-  const url = base + (base.includes("?") ? "&" : "?") + "action=" + action + "&t=" + Date.now();
+  let url = base + (base.includes("?") ? "&" : "?") + "action=" + action + "&t=" + Date.now();
+  if (ROUTER_API_KEY) {
+    url += "&key=" + encodeURIComponent(ROUTER_API_KEY);
+  }
   const res = await fetch(url);
   if (!res.ok) throw new Error("HTTP " + res.status);
   return res.json();
@@ -335,7 +339,8 @@ async function apiGet(action) {
 async function apiPost(payload) {
   const url = GOOGLE_SHEETS_URL || "/api/submit";
   const headers = GOOGLE_SHEETS_URL ? { "Content-Type": "text/plain" } : { "Content-Type": "application/json" };
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(payload) });
+  const enrichedPayload = ROUTER_API_KEY ? { ...payload, key: ROUTER_API_KEY } : payload;
+  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(enrichedPayload) });
   if (!res.ok) throw new Error("HTTP " + res.status);
   return res.json();
 }

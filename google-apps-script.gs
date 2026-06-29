@@ -17,8 +17,12 @@ var XP_CONDITION = 15;
 
 // ── doGet ─────────────────────────────────────────────────────────────────────
 function doGet(e) {
-  var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "get";
   try {
+    var auth = checkAuth(e, null);
+    if (!auth.authorized) {
+      return jsonOut({ success: false, error: auth.error });
+    }
+    var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "get";
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (action === "comments") {
       var rows = getSheetRows(ss, COMMENTS_SHEET);
@@ -41,7 +45,13 @@ function doGet(e) {
 // ── doPost ────────────────────────────────────────────────────────────────────
 function doPost(e) {
   try {
-    var data = JSON.parse(e.postData.contents);
+    var rawData = JSON.parse(e.postData.contents);
+    var auth = checkAuth(e, rawData);
+    if (!auth.authorized) {
+      return jsonOut({ success: false, error: auth.error });
+    }
+    
+    var data = sanitizeInput(rawData);
     var action = data.action || "submit";
     var ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -531,4 +541,51 @@ function getOrCreateSheet(ss, name, headers) {
 function jsonOut(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Security Helpers ──────────────────────────────────────────────────────────
+function checkAuth(e, data) {
+  var serverKey = PropertiesService.getScriptProperties().getProperty("ROUTER_API_KEY");
+  if (!serverKey) {
+    return { authorized: false, error: "Backend API key is not configured in Script Properties. Please configure ROUTER_API_KEY under Settings > Script Properties." };
+  }
+  
+  var clientKey = "";
+  if (e && e.parameter && e.parameter.key) {
+    clientKey = e.parameter.key;
+  } else if (data && data.key) {
+    clientKey = data.key;
+  }
+  
+  if (clientKey !== serverKey) {
+    return { authorized: false, error: "Unauthorized: Invalid or missing API key." };
+  }
+  
+  return { authorized: true };
+}
+
+function sanitizeInput(val) {
+  if (typeof val === "string") {
+    var trimmed = val.trim();
+    if (trimmed.length > 0) {
+      var firstChar = trimmed.charAt(0);
+      if (firstChar === "=" || firstChar === "+" || firstChar === "-" || firstChar === "@") {
+        return "'" + val; // Neutralize Google Sheets formula/CSV injection
+      }
+    }
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizeInput);
+  }
+  if (val !== null && typeof val === "object") {
+    var copy = {};
+    for (var key in val) {
+      if (val.hasOwnProperty(key)) {
+        copy[key] = sanitizeInput(val[key]);
+      }
+    }
+    return copy;
+  }
+  return val;
 }
