@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "ml:fetch": "node --env-file=.env ml/scripts/fetch-routes.mjs",
+    "ml:build": "node ml/scripts/build-dataset.mjs",
+    "ml:advise": "soup advise run ml/data/processed/routes.alpaca.jsonl --goal \"answer questions about commute routes, fares and stops\"",
+    "ml:train": "soup train --config ml/soup.yaml"
   },
   "dependencies": {
     "react": "^19.2.7",

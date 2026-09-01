@@ -1,0 +1,32 @@
+# Soup CLI training config — router-data-collection route assistant.
+#
+# Not meant to be run yet: with only a handful of seed routes today, this is
+# PROMPT_ENG/RAG territory, not a fine-tuning job. Run `npm run ml:advise`
+# after `npm run ml:build` to get Soup's own verdict on the current row
+# count before you ever run `soup train` against this file.
+#
+# When the campaign (through Dec 31, 2026) has produced enough volume,
+# this file needs no changes to start working — it already points at the
+# pipeline output.
+
+base: Qwen/Qwen3-8B
+task: sft
+
+data:
+  train: ml/data/processed/routes.alpaca.jsonl
+  format: alpaca
+  val_split: 0.1
+  max_length: 2048
+
+training:
+  epochs: 3
+  lr: 2e-5
+  batch_size: auto
+  quantization: 4bit
+  lora:
+    r: 64
+    alpha: 16
+    dropout: 0.05
+  seed: 1234
+
+output: ml/runs/route-assistant

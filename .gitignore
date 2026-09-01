@@ -20,6 +20,11 @@ dist-ssr
 # Local data / database
 data/
 
+# ML pipeline: pulled snapshots, generated training data, model checkpoints
+ml/data/raw/
+ml/data/processed/
+ml/runs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
