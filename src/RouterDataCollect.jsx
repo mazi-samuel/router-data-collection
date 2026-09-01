@@ -171,9 +171,9 @@ function AltRow({ alt, idx, onChange, onRemove, mainFrom, mainTo }) {
 const lbl = { display: "block", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 };
 const inp = { width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 14, color: "#1E293B", background: "#fff", outline: "none", fontFamily: "inherit" };
 
-// ── Challenge Countdown Widget (September 30 deadline) ────────────────────────
+// ── Challenge Countdown Widget (December 31 deadline) ────────────────────────
 function CountdownWidget({ light }) {
-  const targetDate = "2026-09-30T23:59:59";
+  const targetDate = "2026-12-31T23:59:59";
   const calc = () => {
     const diff = +new Date(targetDate) - +new Date();
     if (diff <= 0) return { months: 0, weeks: 0, days: 0, hours: 0, minutes: 0, seconds: 0 };
@@ -907,7 +907,7 @@ export default function App() {
             Record your daily commuting routes and earn XP. Detailed entries with accurate fares and stops earn more!
           </p>
           <div style={{ display: "inline-block", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", color: "#fff", fontWeight: 700, fontSize: 11, padding: "5px 12px", borderRadius: 999, marginBottom: 4 }}>
-            ⏳ Entries close: September 30th, 11:59 PM
+            ⏳ Entries close: December 31st, 11:59 PM
           </div>
           <CountdownWidget />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 20 }}>
@@ -1152,7 +1152,7 @@ export default function App() {
             <p style={{ fontSize: 13, color: "#1E3A8A", margin: 0, lineHeight: 1.6 }}>
               Record commuting routes with accurate fares and bus stops. Earn Booster XP by contributing to others' routes or clicking the Speed Bonus!
             </p>
-            <div style={{ marginTop: 12, background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 12, padding: "8px 12px", borderRadius: 8, display: "inline-block" }}>⏳ Campaign Deadline: September 30th, 11:59 PM</div>
+            <div style={{ marginTop: 12, background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 12, padding: "8px 12px", borderRadius: 8, display: "inline-block" }}>⏳ Campaign Deadline: December 31st, 11:59 PM</div>
             <CountdownWidget light={true} />
           </div>
           {REWARDS.map(r => {
