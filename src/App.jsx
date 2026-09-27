@@ -1,39 +1,41 @@
-import { Helmet } from "react-helmet-async";
+import { useEffect } from "react";
 import RouterDataCollect from "./RouterDataCollect.jsx";
 
 function App() {
-  return (
-    <>
-      <Helmet>
-        <title>Ìjènkéọ́mā | Lagos Route Data Collection</title>
-        <meta
-          name="description"
-          content="Ìjènkéọ́mā helps Lagos commuters track routes, compare fares, and contribute reliable public transport data for better city travel decisions."
-        />
-        <meta
-          name="keywords"
-          content="Lagos transport app, route data collection, commuter map, fare tracking, public transport, Lagos mobility, transit data"
-        />
-        <meta property="og:title" content="Ìjènkéọ́mā | Lagos Route Data Collection" />
-        <meta
-          property="og:description"
-          content="Track routes, compare fares, and contribute to a smarter transport database for Lagos."
-        />
-        <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="Ìjènkéọ́mā" />
-        <meta property="og:url" content="https://ijenkema.com/" />
-        <meta property="og:image" content="https://ijenkema.com/davinci_design_a_modern__minimal_app_icon_logo_for__ijenke.svg" />
-        <meta property="twitter:card" content="summary_large_image" />
-        <meta property="twitter:title" content="Ìjènkéọ́mā | Lagos Route Data Collection" />
-        <meta
-          property="twitter:description"
-          content="A commuter-first route and fare platform for Lagos transport data collection."
-        />
-        <link rel="canonical" href="https://ijenkema.com/" />
-      </Helmet>
-      <RouterDataCollect />
-    </>
-  );
+  useEffect(() => {
+    document.title = "Ìjènkéọ́mā | Lagos Route Data Collection";
+
+    let meta = document.querySelector('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "description");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute(
+      "content",
+      "Ìjènkéọ́mā helps Lagos commuters track routes, compare fares, and contribute reliable public transport data for better city travel decisions."
+    );
+
+    const ogTitle = document.querySelector('meta[property="og:title"]') || document.createElement("meta");
+    ogTitle.setAttribute("property", "og:title");
+    ogTitle.setAttribute("content", "Ìjènkéọ́mā | Lagos Route Data Collection");
+    if (!ogTitle.parentNode) document.head.appendChild(ogTitle);
+
+    const ogDescription = document.querySelector('meta[property="og:description"]') || document.createElement("meta");
+    ogDescription.setAttribute("property", "og:description");
+    ogDescription.setAttribute(
+      "content",
+      "Track routes, compare fares, and contribute to a smarter transport database for Lagos."
+    );
+    if (!ogDescription.parentNode) document.head.appendChild(ogDescription);
+
+    const canonical = document.querySelector('link[rel="canonical"]') || document.createElement("link");
+    canonical.setAttribute("rel", "canonical");
+    canonical.setAttribute("href", "https://ijenkema.com/");
+    if (!canonical.parentNode) document.head.appendChild(canonical);
+  }, []);
+
+  return <RouterDataCollect />;
 }
 
 export default App;
