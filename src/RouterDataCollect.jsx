@@ -900,8 +900,8 @@ export default function App() {
         <datalist id="areas-list">{AREAS.map(a => <option key={a} value={a} />)}</datalist>
         <div style={{ background: "linear-gradient(135deg, #0A1F3D 0%, #1A3A6C 100%)", padding: "32px 28px 24px", borderRadius: "0 0 24px 24px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-            <div style={{ fontSize: 36 }}>🗺️</div>
-            <div style={{ color: "#fff", fontWeight: 900, fontSize: 24, lineHeight: 1.1, letterSpacing: "-0.5px" }}>Jùrù Ányá Technologies</div>
+            <div style={{ fontSize: 36, lineHeight: 1 }}>🗺️</div>
+            <div style={{ color: "#fff", fontWeight: 900, fontSize: 24, lineHeight: 1.1, letterSpacing: "-0.5px" }}>Ìjènkéọ́mā</div>
           </div>
           <p style={{ color: "#93C5FD", fontSize: 14, margin: "0 0 12px 0", lineHeight: 1.6 }}>
             Record your daily commuting routes and earn XP. Detailed entries with accurate fares and stops earn more!

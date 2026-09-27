@@ -1,0 +1,17 @@
+{
+  "name": "Ìjènkéọ́mā",
+  "short_name": "Ìjènkéọ́mā",
+  "description": "Lagos route and fare data collection platform for commuters and transit visibility.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A1F3D",
+  "theme_color": "#E87722",
+  "icons": [
+    {
+      "src": "/davinci_design_a_modern__minimal_app_icon_logo_for__ijenke.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
