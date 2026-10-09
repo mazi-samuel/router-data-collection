@@ -990,13 +990,14 @@ export default function App() {
     if (a.userId) lbMap[nameKey].ids.add(a.userId);
   });
 
+  const totalContributors = Object.keys(lbMap).length;
   const lb = Object.entries(lbMap)
-    .map(([nameKey, d]) => ({ 
-      id: Array.from(d.ids)[0] || nameKey, 
+    .map(([nameKey, d]) => ({
+      id: Array.from(d.ids)[0] || nameKey,
       ids: Array.from(d.ids),
-      name: d.name, 
-      xp: d.xp, 
-      entries: d.entries 
+      name: d.name,
+      xp: d.xp,
+      entries: d.entries
     }))
     .sort((a, b) => b.xp - a.xp)
     .slice(0, 10);
@@ -1217,8 +1218,23 @@ export default function App() {
           </div>
           <div style={{ color: "#fff", fontWeight: 900, fontSize: 24 }}>🏆 Leaderboard</div>
           <div style={{ color: "#93C5FD", fontSize: 13, marginTop: 4 }}>{entries.length} routes logged across all contributors</div>
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <div style={{ flex: 1, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: "10px 14px", textAlign: "center" }}>
+              <div style={{ fontWeight: 900, fontSize: 20, color: "#F5A623" }}>{totalContributors.toLocaleString()}</div>
+              <div style={{ fontSize: 10, color: "#93C5FD", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>👥 Total Contributors</div>
+            </div>
+            <div style={{ flex: 1, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: "10px 14px", textAlign: "center" }}>
+              <div style={{ fontWeight: 900, fontSize: 20, color: "#F5A623" }}>{entries.length.toLocaleString()}</div>
+              <div style={{ fontSize: 10, color: "#93C5FD", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>🚌 Routes Logged</div>
+            </div>
+          </div>
         </div>
         <div style={{ padding: "20px 20px" }}>
+          {lb.length > 0 && (
+            <div style={{ fontSize: 12, color: "#94A3B8", fontWeight: 600, marginBottom: 10, textAlign: "center" }}>
+              Showing top {lb.length} of {totalContributors} contributor{totalContributors !== 1 ? "s" : ""}
+            </div>
+          )}
           {lb.length === 0 ? (
             <div style={{ textAlign: "center", padding: 48, color: "#94A3B8" }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🚌</div>
