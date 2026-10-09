@@ -60,6 +60,12 @@ function xpToLevel(xp) {
 }
 function uid()            { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function fmt(n)           { return `₦${Number(n).toLocaleString()}`; }
+// Date + time the route was submitted, e.g. "5 Jan 2026, 3:42 pm".
+function submittedAt(ts) {
+  return new Date(ts || Date.now()).toLocaleString(undefined, {
+    day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit"
+  });
+}
 function applyBoost(xp, divisor) { return Math.round((xp * 2) / divisor); }
 // Speed boost uses flat addition instead of the multiplier formula — math kept below for reference:
 // function applySpeedBoostOld(xp) { return Math.round((xp * 2) / BOOST.speedDiv); }
@@ -1278,7 +1284,7 @@ export default function App() {
                   <span style={{ fontSize: 11, color: "#94A3B8" }}>
                     by <strong>{e.contributor || "Anonymous"}</strong>
                     {isOwn && <span style={{ marginLeft: 4, background: "#DBEAFE", color: "#1E40AF", fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "1px 5px" }}>YOU</span>}
-                    {" · "}{new Date(e.ts || Date.now()).toLocaleDateString()}
+                    {" · "}{submittedAt(e.ts)}
                   </span>
                   <div style={{ display: "flex", gap: 8 }}>
                     {isOwn && (
@@ -1321,7 +1327,7 @@ export default function App() {
               style={{ background: "#F5A623", border: "none", color: "#fff", fontWeight: 700, padding: "8px 16px", borderRadius: 999, cursor: "pointer", fontSize: 13 }}>✏️ Edit Route</button>}
           </div>
           <div style={{ color: "#fff", fontWeight: 900, fontSize: 22 }}>{route.from} → {route.to}</div>
-          <div style={{ color: "#93C5FD", fontSize: 13, marginTop: 4 }}>by {route.contributor || "Anonymous"} · {new Date(route.ts || Date.now()).toLocaleDateString()}</div>
+          <div style={{ color: "#93C5FD", fontSize: 13, marginTop: 4 }}>by {route.contributor || "Anonymous"} · {submittedAt(route.ts)}</div>
         </div>
 
         <div style={{ padding: "20px 20px" }}>
