@@ -85,6 +85,7 @@ function doPost(e) {
     if (action === "thumbs")                return handleThumbs(ss, data);
     if (action === "xpAdjust")             return handleXpAdjust(ss, data);
     if (action === "submitEditWithComment") return handleSubmitEditWithComment(ss, data);
+    if (action === "dedupeRoute")           return handleDedupeRoute(ss, data);
 
     return jsonOut({ success: false, error: "Unknown action: " + action });
   } catch (err) {
@@ -100,10 +101,56 @@ function handleSubmit(ss, data) {
     "negotiateTip", "dayType", "timeOfDay", "condition", "securityHint",
     "notes", "landmark", "timestamp", "ts", "xpEarned"
   ]);
+  // Idempotency guard: a client-side double-tap or a retried request sends
+  // the same client-generated id twice. Without this, each resend creates a
+  // full duplicate row in Routes, Stops and Alts. uid() combines a timestamp
+  // with random chars, so two genuinely different routes never collide here.
+  if (data.id && routeRowExists(routesSheet, data.id)) {
+    return jsonOut({ success: true, duplicate: true });
+  }
   writeRouteRow(routesSheet, data);
   writeStops(ss, data);
   writeAlts(ss, data);
   return jsonOut({ success: true });
+}
+
+function routeRowExists(routesSheet, id) {
+  if (routesSheet.getLastRow() <= 1) return false;
+  var data = routesSheet.getDataRange().getValues();
+  var headers = data[0].map(function(h) { return String(h).trim(); });
+  var idCol = headers.indexOf("id");
+  if (idCol < 0) return false;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(id)) return true;
+  }
+  return false;
+}
+
+// ── Action: Admin cleanup — remove duplicate Routes rows for one id ──────────
+// Keeps the earliest row, deletes the rest. Fixes pre-existing duplicates
+// from before the handleSubmit idempotency guard existed; does not touch
+// Stops/Alts (use "edit" to fix those, which already dedupes on write).
+function handleDedupeRoute(ss, data) {
+  var routesSheet = ss.getSheetByName(ROUTES_SHEET);
+  if (!routesSheet || !data.id) return jsonOut({ success: false, error: "No Routes sheet or id" });
+
+  var sheetData = routesSheet.getDataRange().getValues();
+  var headers   = sheetData[0].map(function(h) { return String(h).trim(); });
+  var idCol     = headers.indexOf("id");
+  if (idCol < 0) return jsonOut({ success: false, error: "No id column" });
+
+  var matchingRows = [];
+  for (var i = 1; i < sheetData.length; i++) {
+    if (String(sheetData[i][idCol]) === String(data.id)) matchingRows.push(i + 1); // 1-based sheet row
+  }
+  if (matchingRows.length <= 1) return jsonOut({ success: true, removed: 0 });
+
+  // Keep the first (earliest) row, delete the rest, highest row index first
+  // so earlier deletions don't shift the indices of rows still to be removed.
+  var toDelete = matchingRows.slice(1).sort(function(a, b) { return b - a; });
+  toDelete.forEach(function(rowIndex) { routesSheet.deleteRow(rowIndex); });
+
+  return jsonOut({ success: true, removed: toDelete.length });
 }
 
 // ── Action: Edit existing route (no from/to changes) ─────────────────────────

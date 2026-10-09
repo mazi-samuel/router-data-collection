@@ -443,6 +443,12 @@ export default function App() {
   const [loading, setLoading]     = useState(true);
   const [toast, setToast]         = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous re-entrancy lock for submit(). `submitting` state is async
+  // (React batches the update), so two near-simultaneous clicks/taps can both
+  // read submitting===false before the first re-render disables the button —
+  // this ref is set immediately, in the same tick, so a second call always
+  // sees it and bails out.
+  const submitLockRef = useRef(false);
   const [lastEntry, setLastEntry] = useState(null);
   // ── boost state ───────────────────────────────────────────────────────────
   const [boostClaimed, setBoostClaimed]           = useState(false);
@@ -768,39 +774,47 @@ export default function App() {
 
   // ── Submit new route ───────────────────────────────────────────────────────
   async function submit() {
-    if (submitting) return;
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setSubmitting(true);
-    const earnedXP = XP_PER_ENTRY + (form.alts.length > 0 ? BONUS.alt * form.alts.length : 0) + (form.peakFare ? BONUS.peak : 0) + (form.condition ? BONUS.condition : 0);
-    const entry = { ...form, action: "submit", contributor: myName, contributorId: myUserId, xpEarned: earnedXP, ts: new Date().toISOString() };
-    let saveSuccess = false;
     try {
-      const r = await apiPost(entry);
-      if (r?.success) saveSuccess = true;
-    } catch {}
-    const newEntries = [entry, ...entries];
-    const newXP     = myXP + earnedXP;
-    const newStreak = myStreak + 1;
-    setEntries(newEntries); setMyXP(newXP); setMyStreak(newStreak);
-    setLastEntry({ ...entry, earnedXP });
-    setLastSubmittedRouteId(entry.id);
-    await saveData("router:speed_boost", { lastSubmittedRouteId: entry.id, claimedRouteIds });
-    // Mark that they have submitted at least once in this session (anti-cheat)
-    setHasSubmittedThisSession(true);
-    // ── Update daily booster counter ─────────────────────────────────────
-    const now = Date.now();
-    const winStart = dailyWindowStart || now;
-    const isWithin24h = dailyWindowStart && (now - dailyWindowStart < 24 * 60 * 60 * 1000);
-    const newDailyCount = isWithin24h ? dailyCount + 1 : 1;
-    const newWindowStart = isWithin24h ? winStart : now;
-    setDailyCount(newDailyCount);
-    if (!isWithin24h) {
-      setDailyWindowStart(newWindowStart);
-      setDailyBoostClaimed(false); // reset if a new 24h window just started
+      const earnedXP = XP_PER_ENTRY + (form.alts.length > 0 ? BONUS.alt * form.alts.length : 0) + (form.peakFare ? BONUS.peak : 0) + (form.condition ? BONUS.condition : 0);
+      const entry = { ...form, action: "submit", contributor: myName, contributorId: myUserId, xpEarned: earnedXP, ts: new Date().toISOString() };
+      let saveSuccess = false;
+      try {
+        const r = await apiPost(entry);
+        if (r?.success) saveSuccess = true;
+      } catch {}
+      const newEntries = [entry, ...entries];
+      const newXP     = myXP + earnedXP;
+      const newStreak = myStreak + 1;
+      setEntries(newEntries); setMyXP(newXP); setMyStreak(newStreak);
+      setLastEntry({ ...entry, earnedXP });
+      setLastSubmittedRouteId(entry.id);
+      await saveData("router:speed_boost", { lastSubmittedRouteId: entry.id, claimedRouteIds });
+      // Mark that they have submitted at least once in this session (anti-cheat)
+      setHasSubmittedThisSession(true);
+      // ── Update daily booster counter ─────────────────────────────────────
+      const now = Date.now();
+      const winStart = dailyWindowStart || now;
+      const isWithin24h = dailyWindowStart && (now - dailyWindowStart < 24 * 60 * 60 * 1000);
+      const newDailyCount = isWithin24h ? dailyCount + 1 : 1;
+      const newWindowStart = isWithin24h ? winStart : now;
+      setDailyCount(newDailyCount);
+      if (!isWithin24h) {
+        setDailyWindowStart(newWindowStart);
+        setDailyBoostClaimed(false); // reset if a new 24h window just started
+      }
+      await saveData("router:daily", { dailyCount: newDailyCount, dailyBoostClaimed: isWithin24h ? dailyBoostClaimed : false, windowStart: newWindowStart });
+      await persist({ entries: newEntries, myXP: newXP, myStreak: newStreak, myName });
+      setForm(emptyForm()); setStep(0); setScreen("success");
+      showToast(saveSuccess ? "Synced to Google Sheets!" : "Saved locally (offline)", saveSuccess ? "success" : "warn");
+    } finally {
+      // Always release the lock, even if something above threw unexpectedly —
+      // otherwise the Submit button would stay disabled for the rest of the session.
+      submitLockRef.current = false;
+      setSubmitting(false);
     }
-    await saveData("router:daily", { dailyCount: newDailyCount, dailyBoostClaimed: isWithin24h ? dailyBoostClaimed : false, windowStart: newWindowStart });
-    await persist({ entries: newEntries, myXP: newXP, myStreak: newStreak, myName });
-    setForm(emptyForm()); setStep(0); setScreen("success"); setSubmitting(false);
-    showToast(saveSuccess ? "Synced to Google Sheets!" : "Saved locally (offline)", saveSuccess ? "success" : "warn");
   }
 
   // ── Edit form helpers ──────────────────────────────────────────────────────
@@ -815,7 +829,8 @@ export default function App() {
 
   // ── Submit edit ────────────────────────────────────────────────────────────
   async function submitEdit() {
-    if (submitting || !editForm) return;
+    if (submitLockRef.current || !editForm) return;
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const payload = { ...editForm, action: pendingThumbsUp ? "submitEditWithComment" : "edit", contributorId: myUserId, contributor: myName };
@@ -849,7 +864,10 @@ export default function App() {
         showToast("Failed to save edit", "warn");
       }
     } catch { showToast("Network error", "warn"); }
-    setSubmitting(false);
+    finally {
+      submitLockRef.current = false;
+      setSubmitting(false);
+    }
   }
 
   // ── Comment actions ────────────────────────────────────────────────────────
@@ -914,6 +932,8 @@ export default function App() {
   // ── Add community alternative ──────────────────────────────────────────────
   async function submitCommunityAlt(routeId, route) {
     if (!myName || !communityAlt.vehicles?.length) { showToast("Select at least one vehicle type", "warn"); return; }
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     const isOwn = route.contributor?.trim().toLowerCase() === myName.trim().toLowerCase() || route.contributorId === myUserId;
     setSubmitting(true);
     try {
@@ -942,7 +962,10 @@ export default function App() {
         showToast("Failed to add alternative", "warn");
       }
     } catch { showToast("Network error", "warn"); }
-    setSubmitting(false);
+    finally {
+      submitLockRef.current = false;
+      setSubmitting(false);
+    }
   }
 
   // ── Leaderboard data ──────────────────────────────────────────────────────
