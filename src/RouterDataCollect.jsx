@@ -177,6 +177,79 @@ function AltRow({ alt, idx, onChange, onRemove, mainFrom, mainTo }) {
 const lbl = { display: "block", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 };
 const inp = { width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: 14, color: "#1E293B", background: "#fff", outline: "none", fontFamily: "inherit" };
 
+// ── Dropdown with a built-in "Other" option ───────────────────────────────────
+// Any preset list is necessarily incomplete — this lets a contributor type a
+// unique answer instead of being forced into the closest-but-wrong option.
+// `options` is an array of strings, or {value, label} objects.
+const OTHER_VALUE = "__other__";
+function SelectWithOther({ value, onChange, options, placeholder = "Select…", otherPlaceholder = "Type your own answer…" }) {
+  const normalized = options.map(o => (typeof o === "string" ? { value: o, label: o } : o));
+  const presetValues = normalized.map(o => o.value);
+  const [otherMode, setOtherMode] = useState(value !== "" && !presetValues.includes(value));
+
+  return (
+    <div>
+      <select
+        style={inp}
+        value={otherMode ? OTHER_VALUE : value}
+        onChange={e => {
+          if (e.target.value === OTHER_VALUE) { setOtherMode(true); onChange(""); }
+          else { setOtherMode(false); onChange(e.target.value); }
+        }}
+      >
+        <option value="">{placeholder}</option>
+        {normalized.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        <option value={OTHER_VALUE}>✏️ Other (type your own)</option>
+      </select>
+      {otherMode && (
+        <input
+          style={{ ...inp, marginTop: 8 }}
+          placeholder={otherPlaceholder}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          autoFocus
+        />
+      )}
+    </div>
+  );
+}
+
+const CONDITION_OPTIONS = [
+  { value: "good",               label: "Good — smooth road, no traffic" },
+  { value: "moderate",           label: "Moderate — some traffic, road OK" },
+  { value: "heavy-traffic",      label: "Heavy traffic — go-slow most of route" },
+  { value: "bad-road",           label: "Bad road — potholes, rough" },
+  { value: "flooded",            label: "Flooded / impassable sections" },
+  { value: "under-construction", label: "Under construction" },
+  { value: "vehicle-full",       label: "Vehicle usually very full/overloaded" },
+];
+const SECURITY_OPTIONS = [
+  { value: "safe-anytime",          label: "Safe at all times" },
+  { value: "caution-nights",        label: "Caution: Avoid late nights / dark hours" },
+  { value: "caution-pickpockets",   label: "Caution: High pickpocket area" },
+  { value: "caution-robbery",       label: "Caution: Frequent traffic robberies / one-chance risk" },
+  { value: "high-risk",             label: "High Risk — travel with extreme caution" },
+];
+
+// A labelled field card used on the Learn More page to explain a single form
+// field: what it means, and a concrete worked example.
+function FieldDoc({ icon, title, tag, children, example }) {
+  return (
+    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+      <div style={{ fontWeight: 700, fontSize: 13.5, color: "#0F172A", marginBottom: 4 }}>
+        {icon} {title}
+        {tag && <span style={{ background: "#DCFCE7", color: "#166534", fontWeight: 700, fontSize: 9, borderRadius: 4, padding: "1px 5px", marginLeft: 6 }}>{tag}</span>}
+      </div>
+      <div style={{ fontSize: 13, color: "#475569", marginBottom: example ? 6 : 0 }}>{children}</div>
+      {example && (
+        <div style={{ fontSize: 12.5, color: "#0A1F3D", background: "#EFF6FF", borderRadius: 6, padding: "6px 10px", fontStyle: "italic" }}>
+          💬 Example: {example}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Challenge Countdown Widget (December 31 deadline) ────────────────────────
 function CountdownWidget({ light }) {
   const targetDate = "2026-12-31T23:59:59";
@@ -1593,32 +1666,16 @@ export default function App() {
           {editStep === 2 && (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-                <div><label style={lbl}>📅 Day type</label><select style={inp} value={editForm.dayType} onChange={e => setEF("dayType", e.target.value)}><option value="">Select…</option>{DAYS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-                <div><label style={lbl}>🕐 Time of day</label><select style={inp} value={editForm.timeOfDay} onChange={e => setEF("timeOfDay", e.target.value)}><option value="">Select…</option>{TIMES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                <div><label style={lbl}>📅 Day type</label><SelectWithOther value={editForm.dayType} onChange={v => setEF("dayType", v)} options={DAYS} otherPlaceholder='e.g. "School run hours (7-8am)"' /></div>
+                <div><label style={lbl}>🕐 Time of day</label><SelectWithOther value={editForm.timeOfDay} onChange={v => setEF("timeOfDay", v)} options={TIMES} otherPlaceholder='e.g. "Market days only"' /></div>
               </div>
               <div style={{ marginBottom: 16 }}>
                 <label style={lbl}>🛣️ Road / vehicle condition</label>
-                <select style={inp} value={editForm.condition} onChange={e => setEF("condition", e.target.value)}>
-                  <option value="">Select if applicable…</option>
-                  <option value="good">Good — smooth road, no traffic</option>
-                  <option value="moderate">Moderate — some traffic, road OK</option>
-                  <option value="heavy-traffic">Heavy traffic — go-slow most of route</option>
-                  <option value="bad-road">Bad road — potholes, rough</option>
-                  <option value="flooded">Flooded / impassable sections</option>
-                  <option value="under-construction">Under construction</option>
-                  <option value="vehicle-full">Vehicle usually very full/overloaded</option>
-                </select>
+                <SelectWithOther value={editForm.condition} onChange={v => setEF("condition", v)} options={CONDITION_OPTIONS} placeholder="Select if applicable…" otherPlaceholder='e.g. "Bridge closed after 9pm"' />
               </div>
               <div style={{ marginBottom: 16 }}>
                 <label style={lbl}>🛡️ Route security / safety hint</label>
-                <select style={inp} value={editForm.securityHint} onChange={e => setEF("securityHint", e.target.value)}>
-                  <option value="">Select if applicable…</option>
-                  <option value="safe-anytime">Safe at all times</option>
-                  <option value="caution-nights">Caution: Avoid late nights / dark hours</option>
-                  <option value="caution-pickpockets">Caution: High pickpocket area</option>
-                  <option value="caution-robbery">Caution: Frequent traffic robberies / one-chance risk</option>
-                  <option value="high-risk">High Risk — travel with extreme caution</option>
-                </select>
+                <SelectWithOther value={editForm.securityHint} onChange={v => setEF("securityHint", v)} options={SECURITY_OPTIONS} placeholder="Select if applicable…" otherPlaceholder='e.g. "Police checkpoint causes delays at night"' />
               </div>
               <div><label style={lbl}>📝 Any other notes</label><textarea style={{ ...inp, height: 80, resize: "vertical" }} value={editForm.notes} onChange={e => setEF("notes", e.target.value)} /></div>
             </div>
@@ -1686,16 +1743,124 @@ export default function App() {
           </div>
           */}
 
-          <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>📋 How to Participate & Submit Routes</h3>
-          <div style={{ fontSize: 14, marginBottom: 24 }}>
-            <p>{/* To ensure the data is useful, */}entries must follow a structured format:</p>
-            <ul style={{ paddingLeft: 20 }}>
-              <li style={{ marginBottom: 10 }}><strong>Step 1: Route & Vehicle Details</strong>: Select origin and destination from our list of major Lagos hubs (e.g. Oshodi, VI, Ikeja). Select all transit modes used (Danfo, BRT, Keke, etc.), and provide standard base, peak, and off-peak fares.</li>
-              <li style={{ marginBottom: 10 }}><strong>Step 2: Stops & Fares</strong>: Add major bus stops in sequence. Input the boarding fare from each stop to the destination to help commuters pay correctly mid-way.</li>
-              <li style={{ marginBottom: 10 }}><strong>Step 3: Timing & Road Conditions</strong>: Tell us when you traveled (weekday/weekend, rush hour) and the road/vehicle quality (potholes, traffic).</li>
-              <li style={{ marginBottom: 10 }}><strong>Step 4: Alternatives</strong>: Document alternative vehicle types or paths for the same route to earn bonus XP.</li>
-            </ul>
+          {/* ── Why accuracy matters ─────────────────────────────────────── */}
+          <div style={{ background: "#FEF3C7", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
+            <h3 style={{ margin: "0 0 8px 0", color: "#92400E", fontWeight: 800, fontSize: 16 }}>🎯 Why Accurate Data Matters</h3>
+            <p style={{ margin: "0 0 8px 0", fontSize: 14, color: "#78350F" }}>
+              Every entry you submit becomes part of a shared, public transport database — and the dataset this project is training a Lagos route assistant on. A commuter somewhere will trust the fare, stop, or safety note you entered to plan their actual journey. A wrong fare costs them money; a wrong safety note costs them trust (or worse).
+            </p>
+            <p style={{ margin: 0, fontSize: 14, color: "#78350F", fontWeight: 700 }}>
+              Three rules beat everything else on this page: (1) Only log a route you've actually traveled or verified. (2) If none of the dropdown options fit, use <strong>"✏️ Other"</strong> and type what's actually true — never pick the closest wrong answer. (3) Detail beats speed; XP is a thank-you, not the goal.
+            </p>
           </div>
+
+          {/* ── Vehicle glossary ─────────────────────────────────────────── */}
+          <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>🚦 Vehicle Types — What's What</h3>
+          <div style={{ fontSize: 13, marginBottom: 24 }}>
+            <p style={{ color: "#475569" }}>Pick <strong>every</strong> vehicle type that actually plies the route you're logging — not just the one you personally rode. If three different vehicle types all go from Oshodi to VI, select all three.</p>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "left" }}>
+              <tbody>
+                <tr style={{ borderBottom: "1px solid #F1F5F9" }}><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>🚌 <strong>Danfo</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>The common yellow mini-bus, usually 14–18 seats. Lagos's default shared bus.</td></tr>
+                <tr style={{ borderBottom: "1px solid #F1F5F9" }}><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>🚍 <strong>BRT</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>The official branded buses running on dedicated lanes with fixed stops only.</td></tr>
+                <tr style={{ borderBottom: "1px solid #F1F5F9" }}><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>🛺 <strong>Keke</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>Three-wheeled tricycle (keke NAPEP/marwa), ~3 passengers. Good for short hops and narrow streets.</td></tr>
+                <tr style={{ borderBottom: "1px solid #F1F5F9" }}><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>🚐 <strong>Korope</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>Smaller "space bus," bigger than a Keke but smaller than a Danfo. Common on short community routes.</td></tr>
+                <tr style={{ borderBottom: "1px solid #F1F5F9" }}><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>🏍️ <strong>Okada</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>Motorcycle taxi, one passenger. Fastest through traffic, higher risk — note this if relevant.</td></tr>
+                <tr style={{ borderBottom: "1px solid #F1F5F9" }}><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>⛴️ <strong>Ferry</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>Water transport across the lagoon/waterways — relevant for island-to-mainland routes.</td></tr>
+                <tr style={{ borderBottom: "1px solid #F1F5F9" }}><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>🚂 <strong>Train</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>The Lagos Rail Mass Transit line, where the route has a station.</td></tr>
+                <tr style={{ borderBottom: "1px solid #F1F5F9" }}><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>🚗 <strong>Sienna Cab</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>Shared taxi car (often a Toyota Sienna), 4–6 passengers. Pricier than Danfo, faster and more comfortable.</td></tr>
+                <tr><td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>🤙 <strong>Hitch a Ride</strong></td><td style={{ padding: "6px 4px", color: "#64748B" }}>An informal lift from a private car/stranger — not commercial, but still real transit data worth logging.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* ── Step-by-step field guide ─────────────────────────────────── */}
+          <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>📋 Submitting a Route — Every Field Explained</h3>
+          <div style={{ fontSize: 14, marginBottom: 8 }}>
+            <p style={{ color: "#475569" }}>Tap <strong>"+ Add Route Data"</strong> on the home screen to open the 4-step form. You can go back a step anytime with the <strong>← Back</strong> button at the bottom; your answers are kept as you move between steps.</p>
+          </div>
+
+          <h4 style={{ margin: "18px 0 8px", fontWeight: 800, fontSize: 15, color: "#1D4ED8" }}>Step 1 of 4 — Route & Vehicle</h4>
+          <FieldDoc icon="📍" title='"From (origin)" text box' example='"Oshodi" or, if it is not a well-known hub, something specific like "Ile-Epo Bus Stop"'>
+            Where the journey starts. Start typing and a list of known Lagos hubs will suggest itself — pick one if it matches, or keep typing your own if it doesn't. This is a free-text box, so nothing you type is ever rejected for not being on the list.
+          </FieldDoc>
+          <FieldDoc icon="🏁" title='"To (destination)" text box' example='"Victoria Island" or "Ajah"'>
+            Where the journey ends. Same free-text behavior as "From" — type the real destination even if it isn't suggested.
+          </FieldDoc>
+          <FieldDoc icon="🚌" title='"Vehicle type(s)" chips — select all that apply' example="A route served by both Danfo and BRT → tap both chips so they're highlighted">
+            Tap every vehicle type (see the glossary above) that actually serves this exact route. Tapping again un-selects it. You must select at least one to continue.
+          </FieldDoc>
+          <FieldDoc icon="💰" title='"Base fare (₦)" number box' example="300">
+            The standard price a passenger pays for the full route under normal conditions. Numbers only, no "₦" sign or commas needed — the app adds those for you. This is required.
+          </FieldDoc>
+          <FieldDoc icon="📈" title='"Peak fare (₦)" number box' tag="+20 XP" example="500">
+            The price during rush hour, if it's higher than the base fare. Leave blank if the fare never changes — but if it does, this is genuinely useful data (it's the single most-requested thing commuters want to know), which is why it's worth bonus XP.
+          </FieldDoc>
+          <FieldDoc icon="📉" title='"Off-peak (₦)" number box' example="250">
+            The price during quiet hours, if lower than base. Leave blank if the fare doesn't change by time of day.
+          </FieldDoc>
+          <FieldDoc icon="☑️" title='"Fare is negotiable with driver/conductor" checkbox'>
+            Check this if the price is haggled on the spot (common for Keke/Okada and some Danfo routes) rather than fixed. Checking it reveals a "Negotiation tip" box.
+          </FieldDoc>
+          <FieldDoc icon="💬" title='"Negotiation tip" text box (only shown if negotiable is checked)' example='"They ask for ₦400 first, but ₦250 is the real price — stand firm."'>
+            Practical advice that helps a first-timer actually get the fair price instead of being overcharged.
+          </FieldDoc>
+          <FieldDoc icon="🏛️" title='"Known landmark at origin" text box' example='"Beside First Bank, under the bridge"'>
+            A visible landmark that helps someone physically find where to stand and board — street names alone are often not enough in Lagos.
+          </FieldDoc>
+
+          <h4 style={{ margin: "22px 0 8px", fontWeight: 800, fontSize: 15, color: "#1D4ED8" }}>Step 2 of 4 — Stops & Fares</h4>
+          <div style={{ fontSize: 13, color: "#475569", marginBottom: 10 }}>
+            A "stop" is any point along the route — in order, from origin to destination — where passengers commonly board or alight.
+          </div>
+          <FieldDoc icon="🚏" title='"Stop name / landmark" text box' example='"Under Bridge, Agege"'>
+            The name of this specific stop along the route, in the order a passenger would pass through it.
+          </FieldDoc>
+          <FieldDoc icon="💰" title='"Boarding fare from here (₦)" number box' example="300">
+            If a passenger boards <strong>at this stop</strong> (not at the origin), how much they pay to reach the final destination — not the fare between this stop and the next one. This lets mid-route boarders pay correctly instead of guessing.
+          </FieldDoc>
+          <FieldDoc icon="📝" title='"Notes" text box (optional)' example='"Few bikes available here at night"'>
+            Anything extra worth knowing specifically about this stop.
+          </FieldDoc>
+          <FieldDoc icon="➕" title='"+ Add Another Stop" button'>
+            Adds a new blank stop row below the last one. Add one row per real stop, in travel order. At least one stop (with a name) is required before you can continue.
+          </FieldDoc>
+
+          <h4 style={{ margin: "22px 0 8px", fontWeight: 800, fontSize: 15, color: "#1D4ED8" }}>Step 3 of 4 — Timing & Conditions</h4>
+          <FieldDoc icon="📅" title='"Day type" dropdown' example='Pick "Weekday (Mon–Fri)" — or if fares only change on, say, school days, choose "✏️ Other" and type "School days only"'>
+            When during the week this fare/condition applies. If none of the presets fit, select <strong>Other</strong> — a text box opens so you can describe it exactly.
+          </FieldDoc>
+          <FieldDoc icon="🕐" title='"Time of day" dropdown' example='Pick "Morning Rush (7–9am)" — or choose "✏️ Other" and type "Market days only, 6-8am"'>
+            The time band this entry describes. Same rule: if the real answer isn't listed, use <strong>Other</strong> instead of forcing it into the nearest wrong band.
+          </FieldDoc>
+          <FieldDoc icon="🛣️" title='"Road / vehicle condition" dropdown' tag="+15 XP" example='Pick "Heavy traffic — go-slow most of route" — or "✏️ Other" → "Bridge closed after 9pm, must divert"'>
+            How the road or vehicle actually was. This helps commuters plan around bad roads or overcrowding. Use <strong>Other</strong> for anything specific the presets don't capture.
+          </FieldDoc>
+          <FieldDoc icon="🛡️" title='"Route security / safety hint" dropdown' example='Pick "Caution: Avoid late nights" — or "✏️ Other" → "Police checkpoint causes delays after dark"'>
+            A real, honest safety note for this route. Only flag caution or high-risk for a <strong>persistent, common</strong> issue — not a single bad experience — since this directly shapes how safe someone feels taking a route. If the situation is specific, use <strong>Other</strong> and describe it plainly.
+          </FieldDoc>
+          <FieldDoc icon="📝" title='"Any other notes" text box' example='"Danfo only runs in the morning. After 7pm, take keke instead."'>
+            A catch-all for anything important that didn't fit elsewhere.
+          </FieldDoc>
+
+          <h4 style={{ margin: "22px 0 8px", fontWeight: 800, fontSize: 15, color: "#1D4ED8" }}>Step 4 of 4 — Alternatives</h4>
+          <div style={{ fontSize: 13, color: "#475569", marginBottom: 10 }}>
+            This step is optional — skip it if there's genuinely only one way to travel this route. An "alternative" is a <strong>different vehicle or a different path</strong> for the same origin → destination, not a variation of what you already entered.
+          </div>
+          <FieldDoc icon="🔀" title='"+ Add Alternative Route / Vehicle" button' tag="+40 XP each">
+            Opens a mini version of Steps 1–2 for the alternative: starting point, end point, vehicle type(s), fares, and its own stops. Leave "Alt. starting point / end point" blank if it's identical to the main route.
+          </FieldDoc>
+          <FieldDoc icon="📝" title='"Via / notes about this route" text box' example='"Goes via Oshodi Expressway — faster but ₦100 more"'>
+            What makes this alternative different, in plain words.
+          </FieldDoc>
+          <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 14px", marginBottom: 10, fontSize: 13, color: "#166534" }}>
+            💡 <strong>Bigger bonus:</strong> Adding an alternative to a route <em>you're</em> creating earns +40 XP each. Adding an alternative to <strong>someone else's existing route</strong> (open it from Browse → Route Detail → add alternative) earns a much larger flat <strong>+215 XP</strong> — because filling a gap in someone else's data is extra valuable.
+          </div>
+          <FieldDoc icon="📋" title='"Entry Summary" box'>
+            A live recap of everything entered so far, plus the exact XP you'll earn. Check it carefully before submitting — this is your last chance to catch a typo.
+          </FieldDoc>
+          <FieldDoc icon="✅" title='"Submit & Earn XP" button'>
+            Sends the entry to the shared database. Once submitted, the route's From/To can't be changed, but you (as the owner) can still edit every other field later via the <strong>✏️ Edit</strong> button on the route — use it if you spot a mistake instead of submitting a duplicate.
+          </FieldDoc>
 
           <h3 style={{ borderBottom: "2px solid #E2E8F0", paddingBottom: 6, color: "#0F172A", fontWeight: 800, fontSize: 17 }}>⚡ XP & Point Calculations</h3>
           <div style={{ fontSize: 14, marginBottom: 24 }}>
@@ -1833,32 +1998,16 @@ export default function App() {
               💡 When did you travel this route? This helps verify fares under different conditions.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-              <div><label style={lbl}>📅 Day type</label><select style={inp} value={form.dayType} onChange={e => setF("dayType", e.target.value)}><option value="">Select…</option>{DAYS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
-              <div><label style={lbl}>🕐 Time of day</label><select style={inp} value={form.timeOfDay} onChange={e => setF("timeOfDay", e.target.value)}><option value="">Select…</option>{TIMES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+              <div><label style={lbl}>📅 Day type</label><SelectWithOther value={form.dayType} onChange={v => setF("dayType", v)} options={DAYS} otherPlaceholder='e.g. "School run hours (7-8am)"' /></div>
+              <div><label style={lbl}>🕐 Time of day</label><SelectWithOther value={form.timeOfDay} onChange={v => setF("timeOfDay", v)} options={TIMES} otherPlaceholder='e.g. "Market days only"' /></div>
             </div>
             <div style={{ marginBottom: 16 }}>
               <label style={lbl}>🛣️ Road / vehicle condition <span style={{ background: "#DCFCE7", color: "#166534", fontWeight: 700, fontSize: 9, borderRadius: 4, padding: "1px 5px" }}>+{BONUS.condition} XP</span></label>
-              <select style={inp} value={form.condition} onChange={e => setF("condition", e.target.value)}>
-                <option value="">Select if applicable…</option>
-                <option value="good">Good — smooth road, no traffic</option>
-                <option value="moderate">Moderate — some traffic, road OK</option>
-                <option value="heavy-traffic">Heavy traffic — go-slow most of route</option>
-                <option value="bad-road">Bad road — potholes, rough</option>
-                <option value="flooded">Flooded / impassable sections</option>
-                <option value="under-construction">Under construction</option>
-                <option value="vehicle-full">Vehicle usually very full/overloaded</option>
-              </select>
+              <SelectWithOther value={form.condition} onChange={v => setF("condition", v)} options={CONDITION_OPTIONS} placeholder="Select if applicable…" otherPlaceholder='e.g. "Bridge closed after 9pm"' />
             </div>
             <div style={{ marginBottom: 16 }}>
               <label style={lbl}>🛡️ Route security / safety hint</label>
-              <select style={inp} value={form.securityHint} onChange={e => setF("securityHint", e.target.value)}>
-                <option value="">Select if applicable…</option>
-                <option value="safe-anytime">Safe at all times</option>
-                <option value="caution-nights">Caution: Avoid late nights / dark hours</option>
-                <option value="caution-pickpockets">Caution: High pickpocket area</option>
-                <option value="caution-robbery">Caution: Frequent traffic robberies / one-chance risk</option>
-                <option value="high-risk">High Risk — travel with extreme caution</option>
-              </select>
+              <SelectWithOther value={form.securityHint} onChange={v => setF("securityHint", v)} options={SECURITY_OPTIONS} placeholder="Select if applicable…" otherPlaceholder='e.g. "Police checkpoint causes delays at night"' />
             </div>
             <div><label style={lbl}>📝 Any other notes</label><textarea style={{ ...inp, height: 80, resize: "vertical" }} placeholder="e.g. Danfo only runs in the morning. After 7pm, take keke." value={form.notes} onChange={e => setF("notes", e.target.value)} /></div>
           </div>
