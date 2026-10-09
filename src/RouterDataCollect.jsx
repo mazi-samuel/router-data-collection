@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import macbookImg from "./assets/macbook.jpg";
-import iphoneImg from "./assets/iphone.jpg";
-import oraimoImg from "./assets/oraimo.png";
-import glassesImg from "./assets/glasses.jpg";
-import crocsImg from "./assets/crocs.jpg";
+import macbookImg from "./assets/macbook.webp";
+import iphoneImg from "./assets/iphone.webp";
+import oraimoImg from "./assets/oraimo.webp";
+import glassesImg from "./assets/glasses.webp";
+import crocsImg from "./assets/crocs.webp";
 
 const GOOGLE_SHEETS_URL = import.meta.env.VITE_GOOGLE_SHEETS_URL || "";
 const ROUTER_API_KEY = import.meta.env.VITE_ROUTER_API_KEY || "";
@@ -419,14 +419,29 @@ export default function App() {
   // ── Fetch all data (routes + comments + XP adjustments) ───────────────────
   const fetchAll = useCallback(async (name, userId, silent = false) => {
     try {
-      const [routeData, commentData, adjData] = await Promise.all([
-        apiGet("get"),
-        apiGet("comments").catch(() => []),
-        apiGet("xpadjustments").catch(() => [])
-      ]);
-      const serverEntries = Array.isArray(routeData) ? routeData : [];
-      const serverComments = Array.isArray(commentData) ? commentData : [];
-      const serverAdj = Array.isArray(adjData) ? adjData : [];
+      // Prefer the combined "all" endpoint (one round trip instead of three).
+      // Falls back to the old three-call shape until the Apps Script backend
+      // is redeployed with the "all" action.
+      let serverEntries, serverComments, serverAdj;
+      try {
+        const combined = await apiGet("all");
+        if (combined && Array.isArray(combined.routes)) {
+          serverEntries  = combined.routes;
+          serverComments = Array.isArray(combined.comments) ? combined.comments : [];
+          serverAdj      = Array.isArray(combined.xpAdjustments) ? combined.xpAdjustments : [];
+        }
+      } catch {}
+
+      if (!serverEntries) {
+        const [routeData, commentData, adjData] = await Promise.all([
+          apiGet("get"),
+          apiGet("comments").catch(() => []),
+          apiGet("xpadjustments").catch(() => [])
+        ]);
+        serverEntries  = Array.isArray(routeData) ? routeData : [];
+        serverComments = Array.isArray(commentData) ? commentData : [];
+        serverAdj      = Array.isArray(adjData) ? adjData : [];
+      }
 
       if (serverEntries.length > 0) setEntries(serverEntries);
       setComments(serverComments);
@@ -471,8 +486,11 @@ export default function App() {
         setClaimedRouteIds(sbSaved.claimedRouteIds || []);
       }
       // ── Daily booster state is computed dynamically from server data below ─
-      await fetchAll(currentName, currentUserId, true);
+      // Render immediately from local cache; let the (often slow) server
+      // fetch fill in fresh data in the background instead of blocking the
+      // whole screen behind the loading spinner.
       setLoading(false);
+      fetchAll(currentName, currentUserId, true);
     })();
   }, []);
 
@@ -1161,7 +1179,7 @@ export default function App() {
             return (
               <div key={r.id} style={{ background: "#fff", border: isUnlocked ? "2px solid #10B981" : "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", marginBottom: 20, boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)" }}>
                 <div style={{ position: "relative", width: "100%", height: 240, background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                  <img src={r.img} alt={r.title} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  <img src={r.img} alt={r.title} loading="lazy" decoding="async" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                   <div style={{ position: "absolute", top: 12, right: 12, background: isUnlocked ? "#10B981" : "#64748B", color: "#fff", fontWeight: 800, fontSize: 12, padding: "6px 12px", borderRadius: 999 }}>
                     {isUnlocked ? "🎉 Qualified" : `${r.xp.toLocaleString()} XP`}
                   </div>

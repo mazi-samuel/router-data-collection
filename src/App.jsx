@@ -31,7 +31,7 @@ function App() {
 
     const canonical = document.querySelector('link[rel="canonical"]') || document.createElement("link");
     canonical.setAttribute("rel", "canonical");
-    canonical.setAttribute("href", "https://ijenkema.com/");
+    canonical.setAttribute("href", "https://ijenkeoma.com/");
     if (!canonical.parentNode) document.head.appendChild(canonical);
   }, []);
 

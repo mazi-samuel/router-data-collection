@@ -36,6 +36,29 @@ function doGet(e) {
     if (action === "xpadjustments") {
       return jsonOut(getSheetRows(ss, XP_ADJ_SHEET));
     }
+    if (action === "all") {
+      // Combines routes + comments + xpadjustments into one response so the
+      // client makes one round trip instead of three, and caches the result
+      // for a few seconds so concurrent page loads don't each re-read the
+      // whole spreadsheet.
+      var cache = CacheService.getScriptCache();
+      var cached = cache.get("all_data");
+      if (cached) {
+        return ContentService.createTextOutput(cached).setMimeType(ContentService.MimeType.JSON);
+      }
+      var commentRows = getSheetRows(ss, COMMENTS_SHEET).map(function(r) {
+        r.thumbsUpBy   = tryParse(r.thumbsUpBy,   []);
+        r.thumbsDownBy = tryParse(r.thumbsDownBy, []);
+        return r;
+      });
+      var json = JSON.stringify({
+        routes: getAllRoutes(ss),
+        comments: commentRows,
+        xpAdjustments: getSheetRows(ss, XP_ADJ_SHEET)
+      });
+      cache.put("all_data", json, 20); // seconds
+      return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+    }
     return jsonOut(getAllRoutes(ss));
   } catch (err) {
     return jsonOut({ error: err.toString() });

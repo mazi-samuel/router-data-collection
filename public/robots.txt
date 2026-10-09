@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ijenkema.com/sitemap.xml
+Sitemap: https://ijenkeoma.com/sitemap.xml
