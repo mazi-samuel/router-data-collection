@@ -429,6 +429,7 @@ function getAllRoutes(ss) {
         fare: a.fare || "", peakFare: a.peakFare || "", offPeakFare: a.offPeakFare || "",
         note: a.note || "",
         addedBy: a.addedBy || "", addedById: a.addedById || "",
+        ts: a.ts || "",
         stops: tryParse(a.altStops || a.stops || "", [])
       };
     });

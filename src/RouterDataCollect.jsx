@@ -464,10 +464,8 @@ export default function App() {
   const [dailyWindowStart, setDailyWindowStart]   = useState(null); // timestamp ms
   // Community-engagement gate: once dailyCount hits DAILY_GATE_TARGET, a
   // comment-on-someone-else's-route or community-alt is required before more
-  // submissions this window. The comment path is derived live from server
-  // timestamps below; adding a community alt has no per-alt timestamp from
-  // the server, so that path is tracked locally and reset when the window rolls.
-  const [dailyGateAltDone, setDailyGateAltDone] = useState(false);
+  // submissions this window. Both paths are derived live from real server
+  // timestamps below (see dailyGateEngaged) — nothing to track locally.
   const [gateModal, setGateModal] = useState(null); // { type: "comment"|"dailyGate", comment?, route? }
   const [showNewsletter, setShowNewsletter] = useState(false);
   // ── community state ───────────────────────────────────────────────────────
@@ -669,26 +667,28 @@ export default function App() {
     }
   }, [entries, xpAdjustments, myName]);
 
-  // Reset the locally-tracked "added a community alt" flag whenever the
-  // 24h window rolls to a new one, so it can't carry over and silently
-  // satisfy a future day's gate.
-  useEffect(() => { setDailyGateAltDone(false); }, [dailyWindowStart]);
-
   // Has this contributor engaged with someone else's route since the
-  // current window started? Comments are checked against real server
-  // timestamps (robust across refresh/devices); the community-alt side
-  // uses the local flag above (the server doesn't expose a per-alt ts).
+  // current window started? Both the comment and community-alt paths are
+  // checked against real server timestamps, so this is robust across a
+  // page refresh and consistent across devices.
   function isMyRoute(route) {
     if (!route) return false;
     return (route.contributor || "").trim().toLowerCase() === (myName || "").trim().toLowerCase() || route.contributorId === myUserId;
   }
-  const dailyGateEngaged = dailyGateAltDone || (!!dailyWindowStart && comments.some(c => {
-    const isMe = c.commenterId === myUserId || (c.commenterName || "").trim().toLowerCase() === (myName || "").trim().toLowerCase();
-    if (!isMe) return false;
-    if (new Date(c.ts || 0).getTime() < dailyWindowStart) return false;
-    const onRoute = entries.find(e => e.id === c.routeId);
-    return onRoute && !isMyRoute(onRoute);
-  }));
+  function isMe(name, id) {
+    return id === myUserId || (name || "").trim().toLowerCase() === (myName || "").trim().toLowerCase();
+  }
+  const dailyGateEngaged = !!dailyWindowStart && (
+    comments.some(c => {
+      if (!isMe(c.commenterName, c.commenterId)) return false;
+      if (new Date(c.ts || 0).getTime() < dailyWindowStart) return false;
+      const onRoute = entries.find(e => e.id === c.routeId);
+      return onRoute && !isMyRoute(onRoute);
+    }) ||
+    entries.some(route => !isMyRoute(route) && (route.alts || []).some(a =>
+      a.addedBy && isMe(a.addedBy, a.addedById) && new Date(a.ts || 0).getTime() >= dailyWindowStart
+    ))
+  );
 
   // The first unresolved (no 👍/👎 yet) comment on any route this contributor owns.
   const myUnresolvedComment = comments.find(c => {
@@ -1002,7 +1002,6 @@ export default function App() {
     try {
       const r = await apiPost({ action: "addAltToOther", routeId, alt: communityAlt, contributor: myName, contributorId: myUserId, oldXP: myXP, newXP: isOwn ? myXP : applyAltOtherBoost(myXP) });
       if (r?.success) {
-        if (!isOwn) setDailyGateAltDone(true); // counts toward today's community-engagement checkpoint
         if (!isOwn && myXP > 0) {
           const newXP = applyAltOtherBoost(myXP);
           const boostGain = newXP - myXP;
@@ -1012,13 +1011,17 @@ export default function App() {
         } else {
           showToast("Alternative route added!");
         }
-        // Update the local view of this route's alts
+        // Update the local view of this route's alts. Stamping ts here
+        // (matching what the server just wrote) keeps the daily
+        // community-engagement check accurate immediately, without
+        // waiting on the next fetchAll.
+        const newAlt = { ...communityAlt, addedBy: myName, addedById: myUserId, ts: new Date().toISOString() };
         setEntries(prev => prev.map(e => {
           if (e.id !== routeId) return e;
-          return { ...e, alts: [...(e.alts || []), { ...communityAlt, addedBy: myName, addedById: myUserId }] };
+          return { ...e, alts: [...(e.alts || []), newAlt] };
         }));
         if (viewingRoute?.id === routeId) {
-          setViewingRoute(prev => ({ ...prev, alts: [...(prev.alts || []), { ...communityAlt, addedBy: myName, addedById: myUserId }] }));
+          setViewingRoute(prev => ({ ...prev, alts: [...(prev.alts || []), newAlt] }));
         }
         setCommunityAlt({ vehicles: [], from: "", to: "", fare: "", peakFare: "", offPeakFare: "", note: "", stops: [] });
         setAddingAltToRoute(null);
