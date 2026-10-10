@@ -577,16 +577,10 @@ export default function App() {
         setLastSubmittedRouteId(sbSaved.lastSubmittedRouteId || "");
         setClaimedRouteIds(sbSaved.claimedRouteIds || []);
       }
-      // ── Contributor digest: remind returning contributors to read Learn
-      // More, once per calendar day ───────────────────────────────────────
-      if (currentName) {
-        const today = new Date().toDateString();
-        const lastShown = await loadData("router:newsletterLastShown");
-        if ((lastShown?.date || "") !== today) {
-          setShowNewsletter(true);
-          await saveData("router:newsletterLastShown", { date: today });
-        }
-      }
+      // ── Contributor digest: shown on every load/refresh, to everyone —
+      // first-time visitors and returning contributors alike — before they
+      // start, pointing them at Learn More.
+      setShowNewsletter(true);
       // ── Daily booster state is computed dynamically from server data below ─
       // Render immediately from local cache; let the (often slow) server
       // fetch fill in fresh data in the background instead of blocking the
@@ -1143,8 +1137,11 @@ export default function App() {
                 <input style={inp} placeholder="Your name or nickname" value={nameInput} onChange={e => setNameInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) handleSaveName(nameInput, recoveryInput); }} />
               </div>
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: "#92400E", display: "block", marginBottom: 4 }}>Contributor ID <span style={{ fontWeight: 400, color: "#B45309" }}>(Optional recovery code to link another device)</span></label>
-                <input style={{ ...inp, fontFamily: "monospace" }} placeholder="e.g. 8g4hj2a" value={recoveryInput} onChange={e => setRecoveryInput(e.target.value)} />
+                <label style={{ fontSize: 12, fontWeight: 700, color: "#92400E", display: "block", marginBottom: 4 }}>Contributor ID <span style={{ fontWeight: 400, color: "#B45309" }}>(optional)</span></label>
+                <input style={{ ...inp, fontFamily: "monospace" }} placeholder="Leave blank — first time here" value={recoveryInput} onChange={e => setRecoveryInput(e.target.value)} />
+                <p style={{ fontSize: 11.5, color: "#B45309", margin: "6px 0 0", lineHeight: 1.5 }}>
+                  👉 First time using this name? <strong>Leave this blank.</strong> You'll get a Contributor ID automatically after saving — only come back and paste it here if you're returning on a <em>new device</em> and want to keep your existing XP.
+                </p>
               </div>
               <button disabled={!nameInput.trim()} onClick={() => handleSaveName(nameInput, recoveryInput)} style={{ width: "100%", padding: "12px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 10, cursor: nameInput.trim() ? "pointer" : "not-allowed", fontSize: 14, opacity: nameInput.trim() ? 1 : 0.5 }}>Save & Continue</button>
             </div>
@@ -1242,6 +1239,7 @@ export default function App() {
         )}
         {!gateModal && showNewsletter && (
           <NewsletterPopup
+            isNewUser={!myName}
             onLearnMore={() => { setShowNewsletter(false); setScreen("learnMore"); }}
             onDismiss={() => setShowNewsletter(false)}
           />
@@ -1888,6 +1886,28 @@ export default function App() {
           </div>
           */}
 
+          {/* ── How new users should begin ───────────────────────────────── */}
+          <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: 14, padding: "16px 18px", marginBottom: 20 }}>
+            <h3 style={{ margin: "0 0 10px 0", color: "#1E40AF", fontWeight: 800, fontSize: 16 }}>🚀 New Here? Start in 3 Steps</h3>
+            <ol style={{ margin: "0 0 14px 0", paddingLeft: 20, fontSize: 14, color: "#1E3A8A", lineHeight: 1.7 }}>
+              <li><strong>Enter your name</strong> on the home screen (any name or nickname — this is how you show up on the leaderboard and how your XP is tracked).</li>
+              <li><strong>Leave "Contributor ID" blank.</strong> See below — you don't need it yet.</li>
+              <li>Tap <strong>🚌 Add a Route</strong> and fill in a route you've actually traveled, following the field guide below.</li>
+            </ol>
+            <div style={{ background: "#fff", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 14px" }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#0F172A", marginBottom: 6 }}>🔑 What is "Contributor ID"? (this trips people up)</div>
+              <p style={{ margin: "0 0 8px 0", fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+                It's a recovery code, not something you make up. <strong>The very first time you use a name, leave this field empty</strong> — just type your name and tap Save & Continue. The app generates a Contributor ID for you automatically and shows it on your home screen afterward (with a "Copy Code" button).
+              </p>
+              <p style={{ margin: "0 0 8px 0", fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+                You only ever need to <em>type</em> one when you're on a <strong>different device or browser</strong> and want to continue using a name you've already used before — paste the code you copied earlier to link back to your existing XP.
+              </p>
+              <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+                If the app says a name is "already registered," someone (maybe you, on another device) has already used it — either pick a different name, or find the Contributor ID you copied before and paste it in.
+              </p>
+            </div>
+          </div>
+
           {/* ── Why accuracy matters ─────────────────────────────────────── */}
           <div style={{ background: "#FEF3C7", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
             <h3 style={{ margin: "0 0 8px 0", color: "#92400E", fontWeight: 800, fontSize: 16 }}>🎯 Why Accurate Data Matters</h3>
@@ -2261,17 +2281,19 @@ function GateModal({ gate, onPrimary, onClose }) {
 }
 
 // ── Dismissible reminder pointing new/returning contributors at Learn More ──
-function NewsletterPopup({ onLearnMore, onDismiss }) {
+function NewsletterPopup({ onLearnMore, onDismiss, isNewUser }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20 }}>
       <div style={{ background: "#fff", borderRadius: 18, maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.35)", overflow: "hidden" }}>
         <div style={{ background: "linear-gradient(135deg, #0A1F3D, #1A3A6C)", padding: "20px 22px" }}>
           <div style={{ fontSize: 11, color: "#93C5FD", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>📰 Contributor Digest</div>
-          <div style={{ color: "#fff", fontWeight: 900, fontSize: 19 }}>Quick reminder before you log routes</div>
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: 19 }}>{isNewUser ? "New here? Read this first" : "Quick reminder before you log routes"}</div>
         </div>
         <div style={{ padding: "20px 22px" }}>
           <p style={{ fontSize: 14, color: "#374151", lineHeight: 1.6, margin: "0 0 14px" }}>
-            A lot of entries lately are missing details or using the wrong vehicle/fare. Every entry trains the dataset real commuters rely on — <strong>accuracy matters more than speed</strong>.
+            {isNewUser
+              ? <>Welcome! Before you dive in: enter your name below, then <strong>read Learn More</strong> — it walks through every field with examples, so you're not guessing.</>
+              : <>A lot of entries lately are missing details or using the wrong vehicle/fare. Every entry trains the dataset real commuters rely on — <strong>accuracy matters more than speed</strong>.</>}
           </p>
           <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "12px 14px", marginBottom: 16, fontSize: 13, color: "#475569" }}>
             <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: 6 }}>💡 Fastest way to earn more XP:</div>
@@ -2281,6 +2303,11 @@ function NewsletterPopup({ onLearnMore, onDismiss }) {
               <li>Add an alternative to someone else's route (+215 XP)</li>
             </ul>
           </div>
+          {isNewUser && (
+            <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 14px", marginBottom: 16, fontSize: 13, color: "#1E40AF" }}>
+              🔑 About the <strong>Contributor ID</strong> field: leave it blank the first time. You only need it later, on a different device, to recover a name you've already used.
+            </div>
+          )}
           <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 18px" }}>
             The <strong>📖 Learn More</strong> page explains every field with examples — worth two minutes if you haven't read it yet.
           </p>
