@@ -40,6 +40,7 @@ const COMMENT_XP = { ownerUp: 1, commenterUp: 5, commenterDown: 1 };
 const SPEED_BOOST_FLAT_XP = 316; // Max flat XP award for speed boost
 const ALT_OTHER_FLAT_XP   = 215; // Flat XP award for adding alt to another's route
 const DAILY_BOOST_TARGET  = 50;  // Routes per day to unlock the daily booster
+const DAILY_GATE_TARGET   = 5;   // Routes per day before a community action (comment/alt on someone else's route) is required
 
 const REWARDS = [
   { id: "macbook", title: "Apple MacBook Pro",       xp: 1500000, img: macbookImg, desc: "Supercharged for pro workflows. High-performance M-series chip with stunning Liquid Retina XDR display." },
@@ -461,6 +462,14 @@ export default function App() {
   const [dailyCount, setDailyCount]               = useState(0);
   const [dailyBoostClaimed, setDailyBoostClaimed] = useState(false);
   const [dailyWindowStart, setDailyWindowStart]   = useState(null); // timestamp ms
+  // Community-engagement gate: once dailyCount hits DAILY_GATE_TARGET, a
+  // comment-on-someone-else's-route or community-alt is required before more
+  // submissions this window. The comment path is derived live from server
+  // timestamps below; adding a community alt has no per-alt timestamp from
+  // the server, so that path is tracked locally and reset when the window rolls.
+  const [dailyGateAltDone, setDailyGateAltDone] = useState(false);
+  const [gateModal, setGateModal] = useState(null); // { type: "comment"|"dailyGate", comment?, route? }
+  const [showNewsletter, setShowNewsletter] = useState(false);
   // ── community state ───────────────────────────────────────────────────────
   const [viewingRoute, setViewingRoute]     = useState(null);
   const [editingEntry, setEditingEntry]     = useState(null);
@@ -570,6 +579,16 @@ export default function App() {
         setLastSubmittedRouteId(sbSaved.lastSubmittedRouteId || "");
         setClaimedRouteIds(sbSaved.claimedRouteIds || []);
       }
+      // ── Contributor digest: remind returning contributors to read Learn
+      // More, once per calendar day ───────────────────────────────────────
+      if (currentName) {
+        const today = new Date().toDateString();
+        const lastShown = await loadData("router:newsletterLastShown");
+        if ((lastShown?.date || "") !== today) {
+          setShowNewsletter(true);
+          await saveData("router:newsletterLastShown", { date: today });
+        }
+      }
       // ── Daily booster state is computed dynamically from server data below ─
       // Render immediately from local cache; let the (often slow) server
       // fetch fill in fresh data in the background instead of blocking the
@@ -649,6 +668,50 @@ export default function App() {
       setDailyBoostClaimed(false);
     }
   }, [entries, xpAdjustments, myName]);
+
+  // Reset the locally-tracked "added a community alt" flag whenever the
+  // 24h window rolls to a new one, so it can't carry over and silently
+  // satisfy a future day's gate.
+  useEffect(() => { setDailyGateAltDone(false); }, [dailyWindowStart]);
+
+  // Has this contributor engaged with someone else's route since the
+  // current window started? Comments are checked against real server
+  // timestamps (robust across refresh/devices); the community-alt side
+  // uses the local flag above (the server doesn't expose a per-alt ts).
+  function isMyRoute(route) {
+    if (!route) return false;
+    return (route.contributor || "").trim().toLowerCase() === (myName || "").trim().toLowerCase() || route.contributorId === myUserId;
+  }
+  const dailyGateEngaged = dailyGateAltDone || (!!dailyWindowStart && comments.some(c => {
+    const isMe = c.commenterId === myUserId || (c.commenterName || "").trim().toLowerCase() === (myName || "").trim().toLowerCase();
+    if (!isMe) return false;
+    if (new Date(c.ts || 0).getTime() < dailyWindowStart) return false;
+    const onRoute = entries.find(e => e.id === c.routeId);
+    return onRoute && !isMyRoute(onRoute);
+  }));
+
+  // The first unresolved (no 👍/👎 yet) comment on any route this contributor owns.
+  const myUnresolvedComment = comments.find(c => {
+    const route = entries.find(e => e.id === c.routeId);
+    return route && isMyRoute(route) && c.resolved !== "true" && c.resolved !== true;
+  });
+
+  // Single gatekeeper for every "start a new route" entry point: blocks on
+  // an unattended comment first, then on the daily community-engagement
+  // checkpoint, before actually opening the form.
+  function startNewRoute() {
+    if (!myName) { showToast("Please enter your name first", "warn"); return; }
+    if (myUnresolvedComment) {
+      const route = entries.find(e => e.id === myUnresolvedComment.routeId);
+      setGateModal({ type: "comment", comment: myUnresolvedComment, route });
+      return;
+    }
+    if (dailyWindowStart && dailyCount >= DAILY_GATE_TARGET && !dailyGateEngaged) {
+      setGateModal({ type: "dailyGate" });
+      return;
+    }
+    setForm(emptyForm()); setStep(0); setScreen("form");
+  }
 
   const persist = useCallback(async (updates) => {
     const state = { entries, myXP, myStreak, myName, myUserId, ...updates };
@@ -939,6 +1002,7 @@ export default function App() {
     try {
       const r = await apiPost({ action: "addAltToOther", routeId, alt: communityAlt, contributor: myName, contributorId: myUserId, oldXP: myXP, newXP: isOwn ? myXP : applyAltOtherBoost(myXP) });
       if (r?.success) {
+        if (!isOwn) setDailyGateAltDone(true); // counts toward today's community-engagement checkpoint
         if (!isOwn && myXP > 0) {
           const newXP = applyAltOtherBoost(myXP);
           const boostGain = newXP - myXP;
@@ -1128,7 +1192,7 @@ export default function App() {
           </div>
 
           {/* CTA buttons */}
-          <button onClick={() => { if (!myName) { showToast("Please enter your name first", "warn"); return; } setForm(emptyForm()); setStep(0); setScreen("form"); }}
+          <button onClick={startNewRoute}
             style={{ width: "100%", padding: "16px", background: "#F5A623", color: "#fff", fontWeight: 900, fontSize: 18, border: "none", borderRadius: 14, cursor: "pointer", marginBottom: 12 }}>
             🚌 Add a Route
           </button>
@@ -1162,6 +1226,23 @@ export default function App() {
           )}
         </div>
         {toast && <Toast msg={toast.msg} type={toast.type} />}
+        {gateModal && (
+          <GateModal
+            gate={gateModal}
+            onPrimary={() => {
+              if (gateModal.type === "comment") { setViewingRoute(gateModal.route); setScreen("routeDetail"); }
+              else setScreen("browse");
+              setGateModal(null);
+            }}
+            onClose={() => setGateModal(null)}
+          />
+        )}
+        {!gateModal && showNewsletter && (
+          <NewsletterPopup
+            onLearnMore={() => { setShowNewsletter(false); setScreen("learnMore"); }}
+            onDismiss={() => setShowNewsletter(false)}
+          />
+        )}
       </div>
     );
   }
@@ -1195,11 +1276,22 @@ export default function App() {
           />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 20 }}>
-            <button onClick={() => { setForm(emptyForm()); setStep(0); setScreen("form"); }} style={{ padding: "14px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 12, cursor: "pointer", fontSize: 15 }}>➕ Add Another</button>
+            <button onClick={startNewRoute} style={{ padding: "14px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 12, cursor: "pointer", fontSize: 15 }}>➕ Add Another</button>
             <button onClick={() => setScreen("home")} style={{ padding: "14px", background: "#0A1F3D", color: "#fff", fontWeight: 700, border: "none", borderRadius: 12, cursor: "pointer", fontSize: 15 }}>🏠 Home</button>
           </div>
         </div>
         {toast && <Toast msg={toast.msg} type={toast.type} />}
+        {gateModal && (
+          <GateModal
+            gate={gateModal}
+            onPrimary={() => {
+              if (gateModal.type === "comment") { setViewingRoute(gateModal.route); setScreen("routeDetail"); }
+              else setScreen("browse");
+              setGateModal(null);
+            }}
+            onClose={() => setGateModal(null)}
+          />
+        )}
       </div>
     );
   }
@@ -1367,7 +1459,7 @@ export default function App() {
             <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}>
               <div style={{ fontSize: 40, marginBottom: 8 }}>🚫</div>
               <div style={{ fontWeight: 700 }}>{browseTab === "mine" ? "You haven't added any routes yet." : "No routes match your search."}</div>
-              {browseTab === "mine" && <button onClick={() => { setForm(emptyForm()); setStep(0); setScreen("form"); }} style={{ marginTop: 16, padding: "10px 20px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 10, cursor: "pointer" }}>Add Your First Route</button>}
+              {browseTab === "mine" && <button onClick={startNewRoute} style={{ marginTop: 16, padding: "10px 20px", background: "#F5A623", color: "#fff", fontWeight: 700, border: "none", borderRadius: 10, cursor: "pointer" }}>Add Your First Route</button>}
             </div>
           ) : filtered.map(e => {
             const vs = (e.vehicles || []).map(vid => VEHICLES.find(v => v.id === vid)).filter(Boolean);
@@ -1417,6 +1509,17 @@ export default function App() {
           })}
         </div>
         {toast && <Toast msg={toast.msg} type={toast.type} />}
+        {gateModal && (
+          <GateModal
+            gate={gateModal}
+            onPrimary={() => {
+              if (gateModal.type === "comment") { setViewingRoute(gateModal.route); setScreen("routeDetail"); }
+              else setScreen("browse");
+              setGateModal(null);
+            }}
+            onClose={() => setGateModal(null)}
+          />
+        )}
       </div>
     );
   }
@@ -2124,6 +2227,64 @@ function Toast({ msg, type }) {
   return (
     <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: bg, color: col, fontWeight: 700, fontSize: 14, padding: "12px 24px", borderRadius: 999, boxShadow: "0 4px 20px rgba(0,0,0,0.15)", zIndex: 9999, whiteSpace: "nowrap", maxWidth: "90vw", textAlign: "center" }}>
       {msg}
+    </div>
+  );
+}
+
+// ── Blocking modal: unresolved comment / daily community-engagement gate ────
+function GateModal({ gate, onPrimary, onClose }) {
+  const isComment = gate.type === "comment";
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 18, padding: "26px 22px", maxWidth: 380, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+        <div style={{ fontSize: 34, textAlign: "center", marginBottom: 10 }}>{isComment ? "💬" : "🤝"}</div>
+        <div style={{ fontWeight: 900, fontSize: 18, color: "#0F172A", textAlign: "center", marginBottom: 8 }}>
+          {isComment ? "A comment is waiting on your route" : "5 routes logged today — nice work!"}
+        </div>
+        <p style={{ fontSize: 14, color: "#475569", textAlign: "center", lineHeight: 1.6, margin: "0 0 20px" }}>
+          {isComment ? (
+            <>Someone left feedback on <strong>{gate.route?.from} → {gate.route?.to}</strong>: "{gate.comment?.text}". Respond with 👍 (you'll fix it) or 👎 (dismiss) before adding another route.</>
+          ) : (
+            "Before adding route #6 today, help review the community first: leave a comment on someone else's route, or add an alternative to one. It keeps the data accurate for everyone, not just fast."
+          )}
+        </p>
+        <button onClick={onPrimary} style={{ width: "100%", padding: "13px", background: "#F5A623", color: "#fff", fontWeight: 800, border: "none", borderRadius: 12, cursor: "pointer", fontSize: 15, marginBottom: 10 }}>
+          {isComment ? "View & Respond" : "Browse Routes"}
+        </button>
+        <button onClick={onClose} style={{ width: "100%", padding: "10px", background: "transparent", color: "#94A3B8", fontWeight: 700, border: "none", cursor: "pointer", fontSize: 13 }}>Not now</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Dismissible reminder pointing new/returning contributors at Learn More ──
+function NewsletterPopup({ onLearnMore, onDismiss }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 18, maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.35)", overflow: "hidden" }}>
+        <div style={{ background: "linear-gradient(135deg, #0A1F3D, #1A3A6C)", padding: "20px 22px" }}>
+          <div style={{ fontSize: 11, color: "#93C5FD", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>📰 Contributor Digest</div>
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: 19 }}>Quick reminder before you log routes</div>
+        </div>
+        <div style={{ padding: "20px 22px" }}>
+          <p style={{ fontSize: 14, color: "#374151", lineHeight: 1.6, margin: "0 0 14px" }}>
+            A lot of entries lately are missing details or using the wrong vehicle/fare. Every entry trains the dataset real commuters rely on — <strong>accuracy matters more than speed</strong>.
+          </p>
+          <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "12px 14px", marginBottom: 16, fontSize: 13, color: "#475569" }}>
+            <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: 6 }}>💡 Fastest way to earn more XP:</div>
+            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+              <li>Fill in peak fare (+20 XP) and road condition (+15 XP)</li>
+              <li>Use "✏️ Other" instead of guessing when an option doesn't fit</li>
+              <li>Add an alternative to someone else's route (+215 XP)</li>
+            </ul>
+          </div>
+          <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 18px" }}>
+            The <strong>📖 Learn More</strong> page explains every field with examples — worth two minutes if you haven't read it yet.
+          </p>
+          <button onClick={onLearnMore} style={{ width: "100%", padding: "13px", background: "#F5A623", color: "#fff", fontWeight: 800, border: "none", borderRadius: 12, cursor: "pointer", fontSize: 15, marginBottom: 10 }}>📖 Read Learn More</button>
+          <button onClick={onDismiss} style={{ width: "100%", padding: "10px", background: "transparent", color: "#94A3B8", fontWeight: 700, border: "none", cursor: "pointer", fontSize: 13 }}>Maybe later</button>
+        </div>
+      </div>
     </div>
   );
 }
