@@ -86,6 +86,7 @@ function doPost(e) {
     if (action === "xpAdjust")             return handleXpAdjust(ss, data);
     if (action === "submitEditWithComment") return handleSubmitEditWithComment(ss, data);
     if (action === "dedupeRoute")           return handleDedupeRoute(ss, data);
+    if (action === "referral")              return handleReferral(ss, data);
 
     return jsonOut({ success: false, error: "Unknown action: " + action });
   } catch (err) {
@@ -151,6 +152,72 @@ function handleDedupeRoute(ss, data) {
   toDelete.forEach(function(rowIndex) { routesSheet.deleteRow(rowIndex); });
 
   return jsonOut({ success: true, removed: toDelete.length });
+}
+
+// ── Action: Award a referral bonus ────────────────────────────────────────────
+// Fired once, client-side, the moment a brand-new contributor (not a
+// recovered existing one) registers while a referral code from the URL is
+// still pending. Awards the REFERRER a random 500-1500 XP adjustment.
+// The new contributor's id is stored in the adjustment's routeId field
+// purely as a dedupe key, so a retried/duplicate request can never award
+// the same referral twice — it is not an actual route.
+function handleReferral(ss, data) {
+  var referrerId = String(data.referrerId || "").trim();
+  var newUserId  = String(data.newUserId  || "").trim();
+  var newUserName = data.newUserName || "";
+  if (!referrerId || !newUserId || referrerId === newUserId) {
+    return jsonOut({ success: false, error: "Invalid referral" });
+  }
+
+  var adjSheet = ss.getSheetByName(XP_ADJ_SHEET);
+  if (adjSheet && adjSheet.getLastRow() > 1) {
+    var adjData    = adjSheet.getDataRange().getValues();
+    var adjHeaders = adjData[0].map(function(h) { return String(h).trim(); });
+    var typeCol    = adjHeaders.indexOf("type");
+    var routeIdCol = adjHeaders.indexOf("routeId");
+    var userIdCol  = adjHeaders.indexOf("userId");
+    for (var i = 1; i < adjData.length; i++) {
+      if (String(adjData[i][typeCol]) === "REFERRAL_BONUS" && String(adjData[i][routeIdCol]) === newUserId) {
+        return jsonOut({ success: true, duplicate: true }); // already awarded for this new contributor
+      }
+    }
+
+    // Confirm the referrer is a real, existing contributor (has a prior XP
+    // adjustment) before checking Routes below — avoids rewarding a made-up code.
+    var isRealReferrer = false;
+    for (var j = 1; j < adjData.length; j++) {
+      if (String(adjData[j][userIdCol]) === referrerId) { isRealReferrer = true; break; }
+    }
+    if (!isRealReferrer && !routeContributorExists(ss, referrerId)) {
+      return jsonOut({ success: false, error: "Unknown referrer" });
+    }
+  } else if (!routeContributorExists(ss, referrerId)) {
+    return jsonOut({ success: false, error: "Unknown referrer" });
+  }
+
+  var xp = Math.floor(Math.random() * (1500 - 500 + 1)) + 500; // inclusive 500-1500
+  recordXpAdjust(ss, {
+    userId: referrerId, userName: "",
+    type: "REFERRAL_BONUS",
+    oldXP: 0, newXP: xp, delta: xp,
+    routeId: newUserId,
+    reason: "Referred " + (newUserName || "a new contributor") + " to join"
+  });
+
+  return jsonOut({ success: true, xpAwarded: xp });
+}
+
+function routeContributorExists(ss, contributorId) {
+  var routesSheet = ss.getSheetByName(ROUTES_SHEET);
+  if (!routesSheet || routesSheet.getLastRow() <= 1) return false;
+  var data = routesSheet.getDataRange().getValues();
+  var headers = data[0].map(function(h) { return String(h).trim(); });
+  var cidCol = headers.indexOf("contributorId");
+  if (cidCol < 0) return false;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][cidCol]) === contributorId) return true;
+  }
+  return false;
 }
 
 // ── Action: Edit existing route (no from/to changes) ─────────────────────────

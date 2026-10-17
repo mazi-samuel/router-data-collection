@@ -468,6 +468,9 @@ export default function App() {
   // timestamps below (see dailyGateEngaged) — nothing to track locally.
   const [gateModal, setGateModal] = useState(null); // { type: "comment"|"dailyGate", comment?, route? }
   const [showNewsletter, setShowNewsletter] = useState(false);
+  // ── referrals ──────────────────────────────────────────────────────────────
+  const [refCode, setRefCode] = useState(""); // pending referrer id, from ?ref= or persisted
+  const [referralReward, setReferralReward] = useState(null); // { xp, count } — pending congrats modal
   // ── community state ───────────────────────────────────────────────────────
   const [viewingRoute, setViewingRoute]     = useState(null);
   const [editingEntry, setEditingEntry]     = useState(null);
@@ -577,6 +580,22 @@ export default function App() {
         setLastSubmittedRouteId(sbSaved.lastSubmittedRouteId || "");
         setClaimedRouteIds(sbSaved.claimedRouteIds || []);
       }
+      // ── Referral: capture ?ref=<contributorId> from the URL, persist it so
+      // it survives a reload before the visitor actually registers, and
+      // strip it from the address bar. Falls back to a previously-saved
+      // pending code if this load has no ?ref= of its own.
+      try {
+        const urlRef = new URLSearchParams(window.location.search).get("ref");
+        if (urlRef && urlRef.trim()) {
+          const cleanRef = urlRef.trim();
+          setRefCode(cleanRef);
+          await saveData("router:refCode", { code: cleanRef });
+          window.history.replaceState({}, "", window.location.pathname);
+        } else {
+          const savedRef = await loadData("router:refCode");
+          if (savedRef?.code) setRefCode(savedRef.code);
+        }
+      } catch {}
       // ── Contributor digest: shown on every load/refresh, to everyone —
       // first-time visitors and returning contributors alike — before they
       // start, pointing them at Learn More.
@@ -661,6 +680,25 @@ export default function App() {
     }
   }, [entries, xpAdjustments, myName]);
 
+  // ── Referral congratulations: detect a REFERRAL_BONUS adjustment this
+  // contributor hasn't been shown yet, and queue the celebration modal.
+  // "Seen" referrals are tracked locally by the new contributor's id (the
+  // same value the server uses as its dedupe key), so this survives reloads
+  // without ever re-showing an already-acknowledged reward.
+  useEffect(() => {
+    if (!myUserId) return;
+    const mine = xpAdjustments.filter(a => a.type === "REFERRAL_BONUS" && a.userId === myUserId);
+    if (mine.length === 0) return;
+    (async () => {
+      const seen = (await loadData("router:seenReferrals"))?.ids || [];
+      const unseen = mine.filter(a => !seen.includes(a.routeId));
+      if (unseen.length === 0) return;
+      const totalXp = unseen.reduce((sum, a) => sum + (Number(a.delta) || 0), 0);
+      setReferralReward({ xp: totalXp, count: unseen.length });
+      await saveData("router:seenReferrals", { ids: [...seen, ...unseen.map(a => a.routeId)] });
+    })();
+  }, [xpAdjustments, myUserId]);
+
   // Has this contributor engaged with someone else's route since the
   // current window started? Both the comment and community-alt paths are
   // checked against real server timestamps, so this is robust across a
@@ -705,6 +743,13 @@ export default function App() {
       return;
     }
     setForm(emptyForm()); setStep(0); setScreen("form");
+  }
+
+  function copyReferralLink() {
+    if (!myUserId) return;
+    const link = `${window.location.origin}${window.location.pathname}?ref=${myUserId}`;
+    navigator.clipboard.writeText(link);
+    showToast("Referral link copied! Earn 500–1,500 XP per friend who joins.");
   }
 
   const persist = useCallback(async (updates) => {
@@ -757,7 +802,19 @@ export default function App() {
       }
     }
 
+    const isNewRegistration = !registeredId && !cleanRecovery;
     const finalId = registeredId || cleanRecovery || uid();
+
+    // Award the referrer, if this is a genuinely new contributor (not a
+    // recovery) who arrived via a referral link. Fire-and-forget: a failure
+    // here should never block the visitor's own registration.
+    if (isNewRegistration && refCode && refCode !== finalId) {
+      apiPost({ action: "referral", referrerId: refCode, newUserId: finalId, newUserName: nameVal })
+        .catch(() => {});
+      setRefCode("");
+      saveData("router:refCode", null);
+    }
+
     let xp = 0, streak = 0;
     entries.forEach(e => {
       if ((e.contributor || "").trim().toLowerCase() === nameKey) {
@@ -775,7 +832,7 @@ export default function App() {
     setRecoveryInput("");
     await saveData("router:state", { entries, myXP: totalXP, myStreak: streak, myName: nameVal, myUserId: finalId });
     showToast(`Logged in as ${nameVal}`);
-  }, [entries, xpAdjustments]);
+  }, [entries, xpAdjustments, refCode]);
 
   // ── Speed Boost claim (flat +316 XP, requires a submission this session) ───
   const handleClaimSpeedBoost = useCallback(async () => {
@@ -1168,6 +1225,10 @@ export default function App() {
                 <span>🔑 Contributor ID: <strong style={{ color: "#fff", fontFamily: "monospace" }}>{myUserId}</strong></span>
                 <button onClick={() => { navigator.clipboard.writeText(myUserId); showToast("Copied Contributor ID!"); }} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", padding: "2px 8px", borderRadius: 4, cursor: "pointer", fontSize: 10, fontWeight: 700 }}>Copy Code</button>
               </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontSize: 11, color: "#93C5FD" }}>
+                <span>🎁 Refer a friend, earn 500–1,500 XP</span>
+                <button onClick={copyReferralLink} style={{ background: "rgba(16,185,129,0.25)", border: "1px solid rgba(16,185,129,0.4)", color: "#fff", padding: "2px 8px", borderRadius: 4, cursor: "pointer", fontSize: 10, fontWeight: 700 }}>Copy Link</button>
+              </div>
             </div>
           )}
 
@@ -1240,9 +1301,14 @@ export default function App() {
         {!gateModal && showNewsletter && (
           <NewsletterPopup
             isNewUser={!myName}
+            referralLink={myUserId ? `${window.location.origin}${window.location.pathname}?ref=${myUserId}` : ""}
+            onCopyReferral={copyReferralLink}
             onLearnMore={() => { setShowNewsletter(false); setScreen("learnMore"); }}
             onDismiss={() => setShowNewsletter(false)}
           />
+        )}
+        {!gateModal && !showNewsletter && referralReward && (
+          <ReferralRewardModal xp={referralReward.xp} count={referralReward.count} onClose={() => setReferralReward(null)} />
         )}
       </div>
     );
@@ -1292,6 +1358,9 @@ export default function App() {
             }}
             onClose={() => setGateModal(null)}
           />
+        )}
+        {!gateModal && referralReward && (
+          <ReferralRewardModal xp={referralReward.xp} count={referralReward.count} onClose={() => setReferralReward(null)} />
         )}
       </div>
     );
@@ -1520,6 +1589,9 @@ export default function App() {
             }}
             onClose={() => setGateModal(null)}
           />
+        )}
+        {!gateModal && referralReward && (
+          <ReferralRewardModal xp={referralReward.xp} count={referralReward.count} onClose={() => setReferralReward(null)} />
         )}
       </div>
     );
@@ -1908,6 +1980,25 @@ export default function App() {
             </div>
           </div>
 
+          {/* ── Referral program ──────────────────────────────────────────── */}
+          <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
+            <h3 style={{ margin: "0 0 8px 0", color: "#166534", fontWeight: 800, fontSize: 16 }}>🎁 Referral Program</h3>
+            <p style={{ margin: "0 0 10px 0", fontSize: 14, color: "#166534", lineHeight: 1.6 }}>
+              Every contributor gets a personal referral link (shown on your home screen once you've saved a name, under your Contributor ID). Share it with friends, family, drivers, anyone who'd know a route.
+            </p>
+            <p style={{ margin: "0 0 10px 0", fontSize: 14, color: "#166534", lineHeight: 1.6 }}>
+              The moment someone opens your link and saves their name for the <strong>first time</strong>, you're awarded a random bonus between <strong>500 and 1,500 XP</strong> — you'll see a "Congratulations!" popup the next time you're on the site. There's no limit on how many friends you can refer.
+            </p>
+            <p style={{ margin: "0 0 14px 0", fontSize: 13, color: "#166534", lineHeight: 1.6, fontStyle: "italic" }}>
+              Note: the bonus is only for genuinely new contributors — if someone is just recovering an existing name with their own Contributor ID, no bonus is awarded.
+            </p>
+            {myUserId ? (
+              <button onClick={copyReferralLink} style={{ width: "100%", padding: "11px", background: "#10B981", color: "#fff", fontWeight: 800, border: "none", borderRadius: 10, cursor: "pointer", fontSize: 14 }}>🔗 Copy My Referral Link</button>
+            ) : (
+              <div style={{ fontSize: 13, color: "#166534", fontStyle: "italic" }}>Save a name on the home screen to get your own referral link.</div>
+            )}
+          </div>
+
           {/* ── Why accuracy matters ─────────────────────────────────────── */}
           <div style={{ background: "#FEF3C7", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
             <h3 style={{ margin: "0 0 8px 0", color: "#92400E", fontWeight: 800, fontSize: 16 }}>🎯 Why Accurate Data Matters</h3>
@@ -2281,7 +2372,7 @@ function GateModal({ gate, onPrimary, onClose }) {
 }
 
 // ── Dismissible reminder pointing new/returning contributors at Learn More ──
-function NewsletterPopup({ onLearnMore, onDismiss, isNewUser }) {
+function NewsletterPopup({ onLearnMore, onDismiss, isNewUser, referralLink, onCopyReferral }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20 }}>
       <div style={{ background: "#fff", borderRadius: 18, maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.35)", overflow: "hidden" }}>
@@ -2308,12 +2399,41 @@ function NewsletterPopup({ onLearnMore, onDismiss, isNewUser }) {
               🔑 About the <strong>Contributor ID</strong> field: leave it blank the first time. You only need it later, on a different device, to recover a name you've already used.
             </div>
           )}
+          {referralLink ? (
+            <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "12px 14px", marginBottom: 18, fontSize: 13, color: "#166534" }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>🎁 Earn 500–1,500 XP per referral</div>
+              <p style={{ margin: "0 0 8px 0", lineHeight: 1.6 }}>Share your link — the moment someone joins through it, you get a random bonus.</p>
+              <button onClick={onCopyReferral} style={{ width: "100%", padding: "9px", background: "#10B981", color: "#fff", fontWeight: 700, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>🔗 Copy My Referral Link</button>
+            </div>
+          ) : (
+            <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "12px 14px", marginBottom: 18, fontSize: 13, color: "#166534" }}>
+              🎁 Once you've saved a name, you'll get your own referral link — share it and earn <strong>500–1,500 XP</strong> every time someone joins through it.
+            </div>
+          )}
           <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 18px" }}>
             The <strong>📖 Learn More</strong> page explains every field with examples — worth two minutes if you haven't read it yet.
           </p>
           <button onClick={onLearnMore} style={{ width: "100%", padding: "13px", background: "#F5A623", color: "#fff", fontWeight: 800, border: "none", borderRadius: 12, cursor: "pointer", fontSize: 15, marginBottom: 10 }}>📖 Read Learn More</button>
           <button onClick={onDismiss} style={{ width: "100%", padding: "10px", background: "transparent", color: "#94A3B8", fontWeight: 700, border: "none", cursor: "pointer", fontSize: 13 }}>Maybe later</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Referral reward celebration ──────────────────────────────────────────────
+function ReferralRewardModal({ xp, count, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 18, padding: "28px 22px", maxWidth: 380, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.35)", textAlign: "center" }}>
+        <div style={{ fontSize: 44, marginBottom: 10 }}>🎉</div>
+        <div style={{ fontWeight: 900, fontSize: 19, color: "#0F172A", marginBottom: 8 }}>Congratulations!</div>
+        <p style={{ fontSize: 14, color: "#475569", lineHeight: 1.6, margin: "0 0 18px" }}>
+          {count > 1
+            ? <>{count} people joined using your referral link and you got rewarded with <strong style={{ color: "#166534" }}>+{xp.toLocaleString()} XP</strong>!</>
+            : <>Someone joined using your referral link, and you got rewarded with <strong style={{ color: "#166534" }}>+{xp.toLocaleString()} XP</strong>!</>}
+        </p>
+        <button onClick={onClose} style={{ width: "100%", padding: "13px", background: "#10B981", color: "#fff", fontWeight: 800, border: "none", borderRadius: 12, cursor: "pointer", fontSize: 15 }}>Awesome, thanks!</button>
       </div>
     </div>
   );
