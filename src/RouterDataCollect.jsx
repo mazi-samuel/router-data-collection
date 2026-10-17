@@ -2557,8 +2557,8 @@ function Toast({ msg, type }) {
 function GateModal({ gate, onPrimary, onClose }) {
   const isComment = gate.type === "comment";
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20 }}>
-      <div style={{ background: "#fff", borderRadius: 18, padding: "26px 22px", maxWidth: 380, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20, overflowY: "auto" }}>
+      <div style={{ background: "#fff", borderRadius: 18, padding: "26px 22px", maxWidth: 380, width: "100%", maxHeight: "calc(100vh - 40px)", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
         <div style={{ fontSize: 34, textAlign: "center", marginBottom: 10 }}>{isComment ? "💬" : "🤝"}</div>
         <div style={{ fontWeight: 900, fontSize: 18, color: "#0F172A", textAlign: "center", marginBottom: 8 }}>
           {isComment ? "A comment is waiting on your route" : "5 routes logged today — nice work!"}
@@ -2582,9 +2582,9 @@ function GateModal({ gate, onPrimary, onClose }) {
 // ── Dismissible reminder pointing new/returning contributors at Learn More ──
 function NewsletterPopup({ onLearnMore, onDismiss, isNewUser, referralLink, onCopyReferral }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20 }}>
-      <div style={{ background: "#fff", borderRadius: 18, maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.35)", overflow: "hidden" }}>
-        <div style={{ background: "linear-gradient(135deg, #0A1F3D, #1A3A6C)", padding: "20px 22px" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20, overflowY: "auto" }}>
+      <div style={{ background: "#fff", borderRadius: 18, maxWidth: 400, width: "100%", maxHeight: "calc(100vh - 40px)", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+        <div style={{ background: "linear-gradient(135deg, #0A1F3D, #1A3A6C)", padding: "20px 22px", borderRadius: "18px 18px 0 0" }}>
           <div style={{ fontSize: 11, color: "#93C5FD", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>📰 Contributor Digest</div>
           <div style={{ color: "#fff", fontWeight: 900, fontSize: 19 }}>{isNewUser ? "New here? Read this first" : "Quick reminder before you log routes"}</div>
         </div>
@@ -2636,8 +2636,8 @@ function NewsletterPopup({ onLearnMore, onDismiss, isNewUser, referralLink, onCo
 // ── Referral reward celebration ──────────────────────────────────────────────
 function ReferralRewardModal({ xp, count, onClose }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20 }}>
-      <div style={{ background: "#fff", borderRadius: 18, padding: "28px 22px", maxWidth: 380, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.35)", textAlign: "center" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,31,61,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20, overflowY: "auto" }}>
+      <div style={{ background: "#fff", borderRadius: 18, padding: "28px 22px", maxWidth: 380, width: "100%", maxHeight: "calc(100vh - 40px)", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.35)", textAlign: "center" }}>
         <div style={{ fontSize: 44, marginBottom: 10 }}>🎉</div>
         <div style={{ fontWeight: 900, fontSize: 19, color: "#0F172A", marginBottom: 8 }}>Congratulations!</div>
         <p style={{ fontSize: 14, color: "#475569", lineHeight: 1.6, margin: "0 0 18px" }}>
