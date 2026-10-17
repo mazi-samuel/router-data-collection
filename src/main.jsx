@@ -21,3 +21,12 @@ createRoot(document.getElementById("root")).render(
     <App />
   </StrictMode>
 );
+
+// Register the service worker for PWA installability, offline shell caching,
+// and push notifications. Registered after first paint so it never delays
+// the initial render.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}

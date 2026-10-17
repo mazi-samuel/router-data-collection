@@ -7,6 +7,16 @@ import crocsImg from "./assets/crocs.webp";
 
 const GOOGLE_SHEETS_URL = import.meta.env.VITE_GOOGLE_SHEETS_URL || "";
 const ROUTER_API_KEY = import.meta.env.VITE_ROUTER_API_KEY || "";
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
+
+// Web Push requires the VAPID public key as a Uint8Array, but browsers hand
+// it to/from the server as a URL-safe base64 string.
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
 
 // ── Storage helpers ──────────────────────────────────────────────────────────
 async function loadData(key) {
@@ -41,6 +51,41 @@ const SPEED_BOOST_FLAT_XP = 316; // Max flat XP award for speed boost
 const ALT_OTHER_FLAT_XP   = 215; // Flat XP award for adding alt to another's route
 const DAILY_BOOST_TARGET  = 50;  // Routes per day to unlock the daily booster
 const DAILY_GATE_TARGET   = 5;   // Routes per day before a community action (comment/alt on someone else's route) is required
+const LUCKY_WINDOW_MINUTES = 30; // Duration of each day's surprise Lucky Window
+const LUCKY_MULTIPLIER     = 100; // XP multiplier applied to every route submitted during it
+
+// Deterministic "surprise" Lucky Window: one random 30-minute window per
+// calendar day (local time), at a start time derived from the date so every
+// visitor's browser computes the exact same window independently — no
+// server coordination needed, same pattern as the Speed Boost's clock-based
+// cycle, just daily instead of per-minute. The time isn't shown in advance
+// anywhere in the UI, so it stays a genuine surprise.
+// 32-bit integer mixer (Murmur3-style finalizer) — needed because a plain
+// rolling string hash of "YYYY-MM-DD" is nearly linear (consecutive dates
+// only differ in their last character, so the hash barely changes day to
+// day). This mixer gives consecutive day-numbers well-scattered, unrelated
+// outputs, so the window genuinely jumps around rather than creeping by a
+// few milliseconds each day.
+function mix32(x) {
+  x = x >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  x = (x ^ (x >>> 16)) >>> 0;
+  return x;
+}
+function getTodaysLuckyWindow() {
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const windowMs = LUCKY_WINDOW_MINUTES * 60 * 1000;
+  const dayNumber = Math.floor(dayStart / dayMs);
+  const offset = mix32(dayNumber) % (dayMs - windowMs);
+  return { start: dayStart + offset, end: dayStart + offset + windowMs };
+}
+function isLuckyWindowActive(atTime = Date.now()) {
+  const w = getTodaysLuckyWindow();
+  return atTime >= w.start && atTime < w.end;
+}
 
 const REWARDS = [
   { id: "macbook", title: "Apple MacBook Pro",       xp: 1500000, img: macbookImg, desc: "Supercharged for pro workflows. High-performance M-series chip with stunning Liquid Retina XDR display." },
@@ -290,6 +335,47 @@ function CountdownWidget({ light }) {
   );
 }
 
+// ── Lucky Window banner — a 100x XP surprise window, ~30 min/day ────────────
+// No countdown-to-start is ever shown anywhere; this only renders once the
+// window is actually open, ticking down the time left to catch it.
+function LuckyWindowBanner({ compact }) {
+  const [active, setActive] = useState(() => isLuckyWindowActive());
+  const [msLeft, setMsLeft] = useState(0);
+
+  useEffect(() => {
+    const tick = () => {
+      const now = Date.now();
+      const isActive = isLuckyWindowActive(now);
+      setActive(isActive);
+      if (isActive) setMsLeft(getTodaysLuckyWindow().end - now);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!active) return null;
+  const mins = Math.floor(msLeft / 60000);
+  const secs = Math.floor((msLeft % 60000) / 1000);
+
+  return (
+    <div style={{
+      margin: compact ? "0 0 16px" : "0 0 20px", padding: compact ? "10px 14px" : "14px 18px",
+      background: "linear-gradient(135deg, #F5A623, #EAB308)", borderRadius: 14,
+      boxShadow: "0 0 24px rgba(245,166,35,0.55)", animation: "pulse 1.2s infinite",
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10
+    }}>
+      <div>
+        <div style={{ color: "#4A1D00", fontWeight: 900, fontSize: compact ? 13 : 15 }}>🍀 LUCKY WINDOW — {LUCKY_MULTIPLIER}× XP!</div>
+        <div style={{ color: "#5C2D00", fontSize: 11, fontWeight: 700 }}>Every route you submit right now earns {LUCKY_MULTIPLIER}× its XP. Hurry!</div>
+      </div>
+      <div style={{ background: "rgba(0,0,0,0.2)", color: "#fff", fontWeight: 900, fontSize: 16, borderRadius: 10, padding: "6px 12px", whiteSpace: "nowrap" }}>
+        {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+      </div>
+    </div>
+  );
+}
+
 // Anti-cheat: hasSubmittedThisSession is in-memory (cleared on refresh) so you must
 // actually submit a route in the current browser session to be eligible.
 function SpeedBoostWidget({ onClaim, claimed, hasSubmittedThisSession }) {
@@ -471,6 +557,9 @@ export default function App() {
   // ── referrals ──────────────────────────────────────────────────────────────
   const [refCode, setRefCode] = useState(""); // pending referrer id, from ?ref= or persisted
   const [referralReward, setReferralReward] = useState(null); // { xp, count } — pending congrats modal
+  // ── push notification reminders ───────────────────────────────────────────
+  // "unsupported" | "checking" | "off" | "denied" | "on"
+  const [pushStatus, setPushStatus] = useState(VAPID_PUBLIC_KEY && "serviceWorker" in navigator && "PushManager" in window ? "checking" : "unsupported");
   // ── community state ───────────────────────────────────────────────────────
   const [viewingRoute, setViewingRoute]     = useState(null);
   const [editingEntry, setEditingEntry]     = useState(null);
@@ -752,6 +841,54 @@ export default function App() {
     showToast("Referral link copied! Earn 500–1,500 XP per friend who joins.");
   }
 
+  // ── Push notification reminders: check current subscription state once on mount ─
+  useEffect(() => {
+    if (!VAPID_PUBLIC_KEY || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (Notification.permission === "denied") { setPushStatus("denied"); return; }
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => setPushStatus(sub ? "on" : "off"))
+      .catch(() => setPushStatus("off"));
+  }, []);
+
+  async function enablePushReminders() {
+    if (pushStatus === "unsupported") { showToast("Notifications aren't supported on this browser/device", "warn"); return; }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") { setPushStatus(permission === "denied" ? "denied" : "off"); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+      await apiPost({
+        action: "subscribePush",
+        subscription: sub.toJSON(),
+        contributorId: myUserId,
+        contributorName: myName
+      });
+      setPushStatus("on");
+      showToast("Reminders turned on — we'll nudge you to log routes!");
+    } catch {
+      showToast("Couldn't turn on reminders. Try again?", "warn");
+    }
+  }
+
+  async function disablePushReminders() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await apiPost({ action: "unsubscribePush", endpoint: sub.endpoint });
+        await sub.unsubscribe();
+      }
+      setPushStatus("off");
+      showToast("Reminders turned off.");
+    } catch {
+      showToast("Couldn't turn off reminders. Try again?", "warn");
+    }
+  }
+
   const persist = useCallback(async (updates) => {
     const state = { entries, myXP, myStreak, myName, myUserId, ...updates };
     await saveData("router:state", state);
@@ -892,7 +1029,9 @@ export default function App() {
     submitLockRef.current = true;
     setSubmitting(true);
     try {
-      const earnedXP = XP_PER_ENTRY + (form.alts.length > 0 ? BONUS.alt * form.alts.length : 0) + (form.peakFare ? BONUS.peak : 0) + (form.condition ? BONUS.condition : 0);
+      const baseEarnedXP = XP_PER_ENTRY + (form.alts.length > 0 ? BONUS.alt * form.alts.length : 0) + (form.peakFare ? BONUS.peak : 0) + (form.condition ? BONUS.condition : 0);
+      const wasLucky = isLuckyWindowActive();
+      const earnedXP = wasLucky ? baseEarnedXP * LUCKY_MULTIPLIER : baseEarnedXP;
       const entry = { ...form, action: "submit", contributor: myName, contributorId: myUserId, xpEarned: earnedXP, ts: new Date().toISOString() };
       let saveSuccess = false;
       try {
@@ -903,7 +1042,7 @@ export default function App() {
       const newXP     = myXP + earnedXP;
       const newStreak = myStreak + 1;
       setEntries(newEntries); setMyXP(newXP); setMyStreak(newStreak);
-      setLastEntry({ ...entry, earnedXP });
+      setLastEntry({ ...entry, earnedXP, wasLucky, baseEarnedXP });
       setLastSubmittedRouteId(entry.id);
       await saveData("router:speed_boost", { lastSubmittedRouteId: entry.id, claimedRouteIds });
       // Mark that they have submitted at least once in this session (anti-cheat)
@@ -922,7 +1061,11 @@ export default function App() {
       await saveData("router:daily", { dailyCount: newDailyCount, dailyBoostClaimed: isWithin24h ? dailyBoostClaimed : false, windowStart: newWindowStart });
       await persist({ entries: newEntries, myXP: newXP, myStreak: newStreak, myName });
       setForm(emptyForm()); setStep(0); setScreen("success");
-      showToast(saveSuccess ? "Synced to Google Sheets!" : "Saved locally (offline)", saveSuccess ? "success" : "warn");
+      if (wasLucky) {
+        showToast(`🍀 LUCKY WINDOW! ${LUCKY_MULTIPLIER}× XP applied — +${earnedXP.toLocaleString()} XP!`, "success");
+      } else {
+        showToast(saveSuccess ? "Synced to Google Sheets!" : "Saved locally (offline)", saveSuccess ? "success" : "warn");
+      }
     } finally {
       // Always release the lock, even if something above threw unexpectedly —
       // otherwise the Submit button would stay disabled for the rest of the session.
@@ -1253,6 +1396,7 @@ export default function App() {
           </div>
 
           {/* CTA buttons */}
+          <LuckyWindowBanner />
           <button onClick={startNewRoute}
             style={{ width: "100%", padding: "16px", background: "#F5A623", color: "#fff", fontWeight: 900, fontSize: 18, border: "none", borderRadius: 14, cursor: "pointer", marginBottom: 12 }}>
             🚌 Add a Route
@@ -1325,9 +1469,17 @@ export default function App() {
           <div style={{ fontSize: 72, marginBottom: 16 }}>🎉</div>
           <div style={{ fontWeight: 900, fontSize: 28, color: "#0A1F3D", marginBottom: 8 }}>Route Logged!</div>
           <div style={{ color: "#64748B", fontSize: 15, marginBottom: 20 }}>{lastEntry?.from} → {lastEntry?.to} saved to the Router database.</div>
+          {lastEntry?.wasLucky && (
+            <div style={{ background: "linear-gradient(135deg, #F5A623, #EAB308)", borderRadius: 16, padding: "14px 18px", marginBottom: 14, boxShadow: "0 0 24px rgba(245,166,35,0.5)" }}>
+              <div style={{ color: "#4A1D00", fontWeight: 900, fontSize: 18 }}>🍀 LUCKY WINDOW BONUS!</div>
+              <div style={{ color: "#5C2D00", fontSize: 13, fontWeight: 700, marginTop: 2 }}>
+                {lastEntry.baseEarnedXP.toLocaleString()} XP × {LUCKY_MULTIPLIER} = {lastEntry.earnedXP.toLocaleString()} XP
+              </div>
+            </div>
+          )}
           <div style={{ background: "linear-gradient(135deg, #0A1F3D, #1A3A6C)", borderRadius: 20, padding: "28px 24px", color: "#fff", marginBottom: 20 }}>
             <div style={{ fontSize: 13, color: "#93C5FD", marginBottom: 4 }}>You earned</div>
-            <div style={{ fontSize: 56, fontWeight: 900, color: "#F5A623", lineHeight: 1 }}>+{lastEntry?.earnedXP}</div>
+            <div style={{ fontSize: 56, fontWeight: 900, color: "#F5A623", lineHeight: 1 }}>+{lastEntry?.earnedXP.toLocaleString()}</div>
             <div style={{ fontSize: 16, color: "#93C5FD" }}>XP</div>
             <div style={{ margin: "16px 0 10px", height: 6, background: "rgba(255,255,255,.15)", borderRadius: 3, overflow: "hidden" }}>
               <div style={{ height: "100%", width: pct + "%", background: "#F5A623", borderRadius: 3 }} />
@@ -1980,6 +2132,46 @@ export default function App() {
             </div>
           </div>
 
+          {/* ── Install as an app + reminders ─────────────────────────────── */}
+          <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
+            <h3 style={{ margin: "0 0 10px 0", color: "#1E40AF", fontWeight: 800, fontSize: 16 }}>📲 Install Ìjènkéọ́mā on Your Phone</h3>
+            <p style={{ margin: "0 0 12px 0", fontSize: 14, color: "#1E3A8A", lineHeight: 1.6 }}>
+              This site works like a real app — install it and it sits on your home screen with its own icon, opens full-screen without the browser bar, and still works to browse routes you've already seen with a weak signal.
+            </p>
+            <div style={{ background: "#fff", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#0F172A", marginBottom: 4 }}>📱 Android (Chrome)</div>
+              <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.6 }}>Tap the <strong>⋮ menu</strong> (top right) → <strong>Install app</strong> (or "Add to Home screen"). Confirm, and the icon appears on your home screen.</p>
+            </div>
+            <div style={{ background: "#fff", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#0F172A", marginBottom: 4 }}>🍎 iPhone / iPad (Safari)</div>
+              <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.6 }}>Tap the <strong>Share icon</strong> (square with an arrow, bottom bar) → scroll down → <strong>Add to Home Screen</strong> → <strong>Add</strong>. Must be done in Safari — other browsers on iOS can't install it.</p>
+            </div>
+            <div style={{ background: "#fff", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#0F172A", marginBottom: 4 }}>💻 Desktop (Chrome / Edge)</div>
+              <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.6 }}>Click the <strong>install icon</strong> in the address bar (a small monitor with a down arrow), or the <strong>⋮ menu</strong> → <strong>Install Ìjènkéọ́mā</strong>.</p>
+            </div>
+
+            <h4 style={{ margin: "4px 0 8px", fontWeight: 800, fontSize: 14, color: "#1E40AF" }}>🔔 Route Reminders</h4>
+            <p style={{ margin: "0 0 10px 0", fontSize: 13, color: "#1E3A8A", lineHeight: 1.6 }}>
+              Turn on notifications and you'll get a few gentle nudges through the day reminding you to log a route if you've seen one — easy to miss a Lucky Window (see below) otherwise.
+            </p>
+            {pushStatus === "unsupported" && (
+              <div style={{ fontSize: 12, color: "#64748B", fontStyle: "italic" }}>Not supported on this browser — try Chrome on Android, or install the app first on iPhone.</div>
+            )}
+            {pushStatus === "denied" && (
+              <div style={{ fontSize: 12, color: "#B45309", fontStyle: "italic" }}>Notifications are blocked for this site in your browser settings — enable them there, then reload this page.</div>
+            )}
+            {(pushStatus === "on" || pushStatus === "off" || pushStatus === "checking") && (
+              <button
+                onClick={pushStatus === "on" ? disablePushReminders : enablePushReminders}
+                disabled={pushStatus === "checking"}
+                style={{ width: "100%", padding: "11px", background: pushStatus === "on" ? "#F1F5F9" : "#1D4ED8", color: pushStatus === "on" ? "#475569" : "#fff", fontWeight: 800, border: "none", borderRadius: 10, cursor: pushStatus === "checking" ? "default" : "pointer", fontSize: 14 }}
+              >
+                {pushStatus === "on" ? "🔕 Turn Off Reminders" : pushStatus === "checking" ? "Checking…" : "🔔 Turn On Reminders"}
+              </button>
+            )}
+          </div>
+
           {/* ── Referral program ──────────────────────────────────────────── */}
           <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 14, padding: "16px 18px", marginBottom: 24 }}>
             <h3 style={{ margin: "0 0 8px 0", color: "#166534", fontWeight: 800, fontSize: 16 }}>🎁 Referral Program</h3>
@@ -2150,6 +2342,12 @@ export default function App() {
                   Award: <span style={{ color: "#10B981", fontWeight: 700 }}>2× multiplier</span> (doubles your total XP, then refreshes progress to 0/50)
                 </div>
               </li>
+              <li style={{ marginBottom: 10 }}>
+                <strong>🍀 Lucky Window</strong>: A genuine surprise — once a day, a random 30-minute window opens somewhere on the site. There's no schedule shown anywhere, so the only way to catch it is to be active (or get one of your reminder notifications) when it happens.
+                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "8px 12px", borderRadius: 8, marginTop: 4 }}>
+                  Award: <span style={{ color: "#B45309", fontWeight: 900 }}>{LUCKY_MULTIPLIER}× XP</span> on every complete route you submit while it's open. A route worth 300 XP becomes <strong>30,000 XP</strong>. A banner appears on the home screen and the route form the moment it's live, with a countdown — submit before it closes to get the bonus.
+                </div>
+              </li>
             </ul>
 
             <h4 style={{ margin: "18px 0 6px", fontWeight: 700, fontSize: 15 }}>Accuracy Reviews</h4>
@@ -2211,6 +2409,7 @@ export default function App() {
       </div>
 
       <div style={{ padding: "20px 20px" }}>
+        <LuckyWindowBanner compact />
         {step === 0 && (
           <div>
             <div style={{ background: "#EFF6FF", borderRadius: 12, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#1D4ED8" }}>
@@ -2306,9 +2505,18 @@ export default function App() {
                     <div key={x.label} style={{ background: "#F5A623", color: "#fff", fontWeight: 700, fontSize: 12, borderRadius: 6, padding: "4px 10px" }}>+{x.pts} {x.label}</div>
                   ))}
                 </div>
-                <div style={{ marginTop: 10, fontWeight: 900, fontSize: 20, color: "#F5A623" }}>
-                  Total: +{XP_PER_ENTRY + (form.alts.length > 0 ? BONUS.alt * form.alts.length : 0) + (form.peakFare ? BONUS.peak : 0) + (form.condition ? BONUS.condition : 0)} XP
-                </div>
+                {(() => {
+                  const baseTotal = XP_PER_ENTRY + (form.alts.length > 0 ? BONUS.alt * form.alts.length : 0) + (form.peakFare ? BONUS.peak : 0) + (form.condition ? BONUS.condition : 0);
+                  const lucky = isLuckyWindowActive();
+                  return lucky ? (
+                    <>
+                      <div style={{ marginTop: 10, fontSize: 12, color: "#FDE68A", fontWeight: 700 }}>🍀 Lucky Window is open — ×{LUCKY_MULTIPLIER} applied!</div>
+                      <div style={{ fontWeight: 900, fontSize: 22, color: "#FBBF24" }}>Total: +{(baseTotal * LUCKY_MULTIPLIER).toLocaleString()} XP</div>
+                    </>
+                  ) : (
+                    <div style={{ marginTop: 10, fontWeight: 900, fontSize: 20, color: "#F5A623" }}>Total: +{baseTotal.toLocaleString()} XP</div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -2392,6 +2600,7 @@ function NewsletterPopup({ onLearnMore, onDismiss, isNewUser, referralLink, onCo
               <li>Fill in peak fare (+20 XP) and road condition (+15 XP)</li>
               <li>Use "✏️ Other" instead of guessing when an option doesn't fit</li>
               <li>Add an alternative to someone else's route (+215 XP)</li>
+              <li>🍀 Catch the surprise <strong>Lucky Window</strong> — {LUCKY_MULTIPLIER}× XP on every route while it's open (see Learn More)</li>
             </ul>
           </div>
           {isNewUser && (
@@ -2410,6 +2619,9 @@ function NewsletterPopup({ onLearnMore, onDismiss, isNewUser, referralLink, onCo
               🎁 Once you've saved a name, you'll get your own referral link — share it and earn <strong>500–1,500 XP</strong> every time someone joins through it.
             </div>
           )}
+          <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 12.5, color: "#475569" }}>
+            📲 <strong>Tip:</strong> Install this as an app (Learn More has one-tap steps for your phone) and turn on reminders so you don't miss a Lucky Window.
+          </div>
           <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 18px" }}>
             The <strong>📖 Learn More</strong> page explains every field with examples — worth two minutes if you haven't read it yet.
           </p>

@@ -9,6 +9,7 @@ var STOPS_SHEET    = "Stops";
 var ALTS_SHEET     = "Alternatives";
 var COMMENTS_SHEET = "Comments";
 var XP_ADJ_SHEET   = "XPAdjustments";
+var PUSH_SHEET     = "PushSubscriptions";
 
 var XP_PER_ENTRY = 120;
 var XP_ALT       = 40;
@@ -35,6 +36,11 @@ function doGet(e) {
     }
     if (action === "xpadjustments") {
       return jsonOut(getSheetRows(ss, XP_ADJ_SHEET));
+    }
+    if (action === "pushSubscriptions") {
+      // Only the Vercel reminder-sender cron calls this (authenticated with
+      // the same ROUTER_API_KEY as everything else) — not exposed to the app UI.
+      return jsonOut(getSheetRows(ss, PUSH_SHEET));
     }
     if (action === "all") {
       // Combines routes + comments + xpadjustments into one response so the
@@ -87,6 +93,9 @@ function doPost(e) {
     if (action === "submitEditWithComment") return handleSubmitEditWithComment(ss, data);
     if (action === "dedupeRoute")           return handleDedupeRoute(ss, data);
     if (action === "referral")              return handleReferral(ss, data);
+    if (action === "subscribePush")         return handleSubscribePush(ss, data);
+    if (action === "unsubscribePush")       return handleUnsubscribePush(ss, data);
+    if (action === "pruneExpiredPush")      return handlePruneExpiredPush(ss, data);
 
     return jsonOut({ success: false, error: "Unknown action: " + action });
   } catch (err) {
@@ -218,6 +227,57 @@ function routeContributorExists(ss, contributorId) {
     if (String(data[i][cidCol]) === contributorId) return true;
   }
   return false;
+}
+
+// ── Action: Save a push subscription (upsert by endpoint) ────────────────────
+function handleSubscribePush(ss, data) {
+  var sub = data.subscription || {};
+  var endpoint = sub.endpoint || "";
+  var keys = sub.keys || {};
+  if (!endpoint || !keys.p256dh || !keys.auth) {
+    return jsonOut({ success: false, error: "Invalid subscription" });
+  }
+  var sheet = getOrCreateSheet(ss, PUSH_SHEET, ["endpoint", "p256dh", "auth", "contributorId", "contributorName", "ts"]);
+  deleteRowsForColumn(sheet, "endpoint", endpoint); // replace any existing row for this device
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return String(h).trim(); });
+  var rd = {
+    endpoint: endpoint, p256dh: keys.p256dh, auth: keys.auth,
+    contributorId: data.contributorId || "", contributorName: data.contributorName || "",
+    ts: new Date().toISOString()
+  };
+  sheet.appendRow(headers.map(function(h) { return rd[h] !== undefined ? rd[h] : ""; }));
+  return jsonOut({ success: true });
+}
+
+// ── Action: Remove a push subscription (user turned reminders off) ───────────
+function handleUnsubscribePush(ss, data) {
+  var sheet = ss.getSheetByName(PUSH_SHEET);
+  if (!sheet || !data.endpoint) return jsonOut({ success: true, removed: 0 });
+  var removed = deleteRowsForColumn(sheet, "endpoint", data.endpoint);
+  return jsonOut({ success: true, removed: removed });
+}
+
+// ── Action: Bulk-remove subscriptions the push service reported as gone ──────
+// Called by the Vercel reminder sender after a 404/410 response for an endpoint.
+function handlePruneExpiredPush(ss, data) {
+  var sheet = ss.getSheetByName(PUSH_SHEET);
+  if (!sheet || !Array.isArray(data.endpoints)) return jsonOut({ success: true, removed: 0 });
+  var removed = 0;
+  data.endpoints.forEach(function(ep) { removed += deleteRowsForColumn(sheet, "endpoint", ep); });
+  return jsonOut({ success: true, removed: removed });
+}
+
+function deleteRowsForColumn(sheet, colName, value) {
+  if (sheet.getLastRow() <= 1) return 0;
+  var sheetData = sheet.getDataRange().getValues();
+  var headers   = sheetData[0].map(function(h) { return String(h).trim(); });
+  var col       = headers.indexOf(colName);
+  if (col < 0) return 0;
+  var removed = 0;
+  for (var i = sheetData.length - 1; i >= 1; i--) {
+    if (String(sheetData[i][col]) === String(value)) { sheet.deleteRow(i + 1); removed++; }
+  }
+  return removed;
 }
 
 // ── Action: Edit existing route (no from/to changes) ─────────────────────────

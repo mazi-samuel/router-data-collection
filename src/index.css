@@ -54,6 +54,12 @@ body {
   margin: 0;
 }
 
+/* Used by the Speed Boost and Lucky Window gamification widgets. */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.82; }
+}
+
 #root {
   width: 1126px;
   max-width: 100%;
