@@ -11,6 +11,8 @@ var COMMENTS_SHEET = "Comments";
 var XP_ADJ_SHEET   = "XPAdjustments";
 var PUSH_SHEET     = "PushSubscriptions";
 var REWARD_SHEET   = "RewardRequests";
+var REDEMPTION_ROUTE_TARGET = 100;
+var REDEMPTION_WINDOW_DAYS = 30;
 
 var XP_PER_ENTRY = 120;
 var XP_ALT       = 40;
@@ -112,6 +114,46 @@ function doPost(e) {
 }
 
 function handleRewardRequest(ss, data) {
+  var rewardThresholds = {
+    macbook: 1500000,
+    iphone: 1000000,
+    oraimo: 250000,
+    glasses: 100000,
+    crocs: 50000
+  };
+  var rewardId = String(data.rewardId || "");
+  var requiredXp = rewardThresholds[rewardId];
+  if (!requiredXp || Number(data.rewardXP) !== requiredXp) {
+    return jsonOut({ success: false, error: "Invalid reward qualification" });
+  }
+  var routes = getAllRoutes(ss);
+  var cutoff = Date.now() - REDEMPTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  var userName = String(data.userName || "").trim().toLowerCase();
+  var recentRouteCount = routes.filter(function(route) {
+    var sameUser = (data.userId && String(route.contributorId) === String(data.userId)) ||
+      String(route.contributor || "").trim().toLowerCase() === userName;
+    var submittedAt = new Date(route.ts || route.timestamp || 0).getTime();
+    return sameUser && submittedAt >= cutoff;
+  }).length;
+  if (recentRouteCount < REDEMPTION_ROUTE_TARGET) {
+    return jsonOut({ success: false, error: "At least 100 routes in the last 30 days are required before redeeming." });
+  }
+  var totalXp = routes.filter(function(route) {
+    return (data.userId && String(route.contributorId) === String(data.userId)) ||
+      String(route.contributor || "").trim().toLowerCase() === userName;
+  }).reduce(function(sum, route) {
+    return sum + (Number(route.xpEarned) || XP_PER_ENTRY);
+  }, 0);
+  var adjustments = getSheetRows(ss, XP_ADJ_SHEET);
+  totalXp += adjustments.filter(function(adjustment) {
+    return (data.userId && String(adjustment.userId) === String(data.userId)) ||
+      String(adjustment.userName || "").trim().toLowerCase() === userName;
+  }).reduce(function(sum, adjustment) {
+    return sum + (Number(adjustment.delta) || 0);
+  }, 0);
+  if (totalXp < requiredXp) {
+    return jsonOut({ success: false, error: "You have not reached the XP threshold for this reward." });
+  }
   var sheet = getOrCreateSheet(ss, REWARD_SHEET, [
     "requestId", "rewardId", "rewardTitle", "rewardXP", "userId", "userName",
     "contact", "deliveryAddress", "note", "status", "requestedAt", "updatedAt"

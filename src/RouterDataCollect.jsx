@@ -95,6 +95,8 @@ const REWARDS = [
   { id: "crocs",   title: "Pair of Crocs",           xp: 50000,   img: crocsImg,   desc: "Lightweight, water-friendly, and buoyant. Iconic Crocs Comfort for everyday commuting convenience." },
 ];
 const REWARD_STATUSES = ["Pending", "Under review", "Approved", "Fulfilled", "Rejected"];
+const REDEMPTION_ROUTE_TARGET = 100;
+const REDEMPTION_WINDOW_DAYS = 30;
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 function xpToLevel(xp) {
@@ -656,7 +658,12 @@ export default function App() {
   }, [computeMyXP]);
 
   async function submitRewardRequest(reward) {
-    if (!myName || myXP < reward.xp || rewardRequestSubmitting) return;
+    const cutoff = Date.now() - REDEMPTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const recentRouteCount = entries.filter(entry =>
+      (entry.contributorId === myUserId || (entry.contributor || "").trim().toLowerCase() === myName.trim().toLowerCase()) &&
+      new Date(entry.ts || entry.timestamp || 0).getTime() >= cutoff
+    ).length;
+    if (!myName || myXP < reward.xp || recentRouteCount < REDEMPTION_ROUTE_TARGET || rewardRequestSubmitting) return;
     if (!rewardContact.trim() || !rewardAddress.trim()) {
       showToast("Add your phone number/email and delivery address", "warn");
       return;
@@ -1648,6 +1655,12 @@ export default function App() {
   // ── REWARDS ───────────────────────────────────────────────────────────────
   // ──────────────────────────────────────────────────────────────────────────
   if (screen === "rewards") {
+    const redemptionCutoff = Date.now() - REDEMPTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const recentRouteCount = entries.filter(entry =>
+      (entry.contributorId === myUserId || (entry.contributor || "").trim().toLowerCase() === myName.trim().toLowerCase()) &&
+      new Date(entry.ts || entry.timestamp || 0).getTime() >= redemptionCutoff
+    ).length;
+    const hasRouteRequirement = recentRouteCount >= REDEMPTION_ROUTE_TARGET;
     return (
       <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", maxWidth: 680, margin: "0 auto", padding: "0 0 60px" }}>
         <div style={{ background: "linear-gradient(135deg, #10B981, #059669)", padding: "24px 20px 20px" }}>
@@ -1661,11 +1674,15 @@ export default function App() {
             <p style={{ fontSize: 13, color: "#1E3A8A", margin: 0, lineHeight: 1.6 }}>
               Record commuting routes with accurate fares and bus stops. Earn Booster XP by contributing to others' routes or clicking the Speed Bonus!
             </p>
+            <div style={{ marginTop: 10, background: hasRouteRequirement ? "#DCFCE7" : "#FEF3C7", color: hasRouteRequirement ? "#166534" : "#92400E", fontWeight: 700, fontSize: 12, padding: "8px 12px", borderRadius: 8 }}>
+              Redemption requirement: {recentRouteCount}/{REDEMPTION_ROUTE_TARGET} routes in the last {REDEMPTION_WINDOW_DAYS} days, plus enough XP for the reward.
+            </div>
             <div style={{ marginTop: 12, background: "#DBEAFE", color: "#1E40AF", fontWeight: 800, fontSize: 12, padding: "8px 12px", borderRadius: 8, display: "inline-block" }}>⏳ Campaign Deadline: December 31st, 11:59 PM</div>
             <CountdownWidget light={true} />
           </div>
           {REWARDS.map(r => {
             const isUnlocked = myXP >= r.xp;
+            const canRedeem = isUnlocked && hasRouteRequirement;
             const progressPct = Math.min(100, Math.round((myXP / r.xp) * 100));
             const existingRequest = rewardRequests.find(request =>
               request.rewardId === r.id &&
@@ -1691,7 +1708,7 @@ export default function App() {
                       <div style={{ height: "100%", width: `${progressPct}%`, background: isUnlocked ? "#10B981" : "#3B82F6", borderRadius: 4 }} />
                     </div>
                   </div>
-                  {isUnlocked && !existingRequest && (
+                  {canRedeem && !existingRequest && (
                     <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: 12, marginBottom: 10 }}>
                       <div style={{ fontSize: 12, color: "#166534", fontWeight: 700, marginBottom: 8 }}>Where should we contact you?</div>
                       <input value={rewardContact} onChange={e => setRewardContact(e.target.value)} placeholder="Phone number or email" style={{ ...inp, marginBottom: 8 }} />
@@ -1699,9 +1716,9 @@ export default function App() {
                       <input value={rewardNote} onChange={e => setRewardNote(e.target.value)} placeholder="Optional note" style={inp} />
                     </div>
                   )}
-                  <button disabled={!isUnlocked || !!existingRequest || rewardRequestSubmitting} onClick={() => submitRewardRequest(r)}
-                    style={{ width: "100%", padding: "12px", background: isUnlocked && !existingRequest ? "#10B981" : "#E2E8F0", color: isUnlocked && !existingRequest ? "#fff" : "#94A3B8", fontWeight: 700, fontSize: 14, border: "none", borderRadius: 10, cursor: isUnlocked && !existingRequest ? "pointer" : "not-allowed" }}>
-                    {!isUnlocked ? "Locked (Insufficient XP)" : existingRequest ? `Request ${existingRequest.status}` : rewardRequestSubmitting ? "Submitting…" : "Request Redemption"}
+                  <button disabled={!canRedeem || !!existingRequest || rewardRequestSubmitting} onClick={() => submitRewardRequest(r)}
+                    style={{ width: "100%", padding: "12px", background: canRedeem && !existingRequest ? "#10B981" : "#E2E8F0", color: canRedeem && !existingRequest ? "#fff" : "#94A3B8", fontWeight: 700, fontSize: 14, border: "none", borderRadius: 10, cursor: canRedeem && !existingRequest ? "pointer" : "not-allowed" }}>
+                    {!isUnlocked ? "Locked (Insufficient XP)" : !hasRouteRequirement ? "Locked (100 recent routes required)" : existingRequest ? `Request ${existingRequest.status}` : rewardRequestSubmitting ? "Submitting…" : "Request Redemption"}
                   </button>
                 </div>
               </div>
