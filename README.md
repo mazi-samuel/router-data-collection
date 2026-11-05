@@ -14,3 +14,11 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the Oxlint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+
+## Reward redemption requests
+
+Eligible contributors can request a reward from the Rewards page by providing
+a phone number or email and full delivery address. Requests are stored in the `RewardRequests` tab by
+`google-apps-script.gs`; deploy the updated Apps Script web app for requests
+and status changes to persist centrally. Each request includes a status
+dropdown: `Pending`, `Under review`, `Approved`, `Fulfilled`, or `Rejected`.

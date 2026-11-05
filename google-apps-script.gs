@@ -10,6 +10,7 @@ var ALTS_SHEET     = "Alternatives";
 var COMMENTS_SHEET = "Comments";
 var XP_ADJ_SHEET   = "XPAdjustments";
 var PUSH_SHEET     = "PushSubscriptions";
+var REWARD_SHEET   = "RewardRequests";
 
 var XP_PER_ENTRY = 120;
 var XP_ALT       = 40;
@@ -37,6 +38,9 @@ function doGet(e) {
     if (action === "xpadjustments") {
       return jsonOut(getSheetRows(ss, XP_ADJ_SHEET));
     }
+    if (action === "rewardRequests") {
+      return jsonOut(getSheetRows(ss, REWARD_SHEET));
+    }
     if (action === "pushSubscriptions") {
       // Only the Vercel reminder-sender cron calls this (authenticated with
       // the same ROUTER_API_KEY as everything else) — not exposed to the app UI.
@@ -60,7 +64,8 @@ function doGet(e) {
       var json = JSON.stringify({
         routes: getAllRoutes(ss),
         comments: commentRows,
-        xpAdjustments: getSheetRows(ss, XP_ADJ_SHEET)
+        xpAdjustments: getSheetRows(ss, XP_ADJ_SHEET),
+        rewardRequests: getSheetRows(ss, REWARD_SHEET)
       });
       cache.put("all_data", json, 20); // seconds
       return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
@@ -90,6 +95,8 @@ function doPost(e) {
     if (action === "comment")               return handleComment(ss, data);
     if (action === "thumbs")                return handleThumbs(ss, data);
     if (action === "xpAdjust")             return handleXpAdjust(ss, data);
+    if (action === "rewardRequest")        return handleRewardRequest(ss, data);
+    if (action === "updateRewardRequest")  return handleUpdateRewardRequest(ss, data);
     if (action === "submitEditWithComment") return handleSubmitEditWithComment(ss, data);
     if (action === "dedupeRoute")           return handleDedupeRoute(ss, data);
     if (action === "referral")              return handleReferral(ss, data);
@@ -101,6 +108,50 @@ function doPost(e) {
   } catch (err) {
     return jsonOut({ success: false, error: err.toString() });
   }
+
+}
+
+function handleRewardRequest(ss, data) {
+  var sheet = getOrCreateSheet(ss, REWARD_SHEET, [
+    "requestId", "rewardId", "rewardTitle", "rewardXP", "userId", "userName",
+    "contact", "deliveryAddress", "note", "status", "requestedAt", "updatedAt"
+  ]);
+  var existing = getSheetRows(ss, REWARD_SHEET).some(function(row) {
+    return String(row.requestId) === String(data.requestId);
+  });
+  if (existing) return jsonOut({ success: true, duplicate: true });
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return String(h).trim(); });
+  var row = {
+    requestId: data.requestId || "", rewardId: data.rewardId || "", rewardTitle: data.rewardTitle || "",
+    rewardXP: data.rewardXP || 0, userId: data.userId || "", userName: data.userName || "",
+    contact: data.contact || "", deliveryAddress: data.deliveryAddress || "",
+    note: data.note || "", status: "Pending",
+    requestedAt: data.requestedAt || new Date().toISOString(), updatedAt: ""
+  };
+  sheet.appendRow(headers.map(function(h) { return row[h] !== undefined ? row[h] : ""; }));
+  return jsonOut({ success: true });
+}
+
+function handleUpdateRewardRequest(ss, data) {
+  var allowed = ["Pending", "Under review", "Approved", "Fulfilled", "Rejected"];
+  if (!data.requestId || allowed.indexOf(data.status) === -1) {
+    return jsonOut({ success: false, error: "Invalid reward request status" });
+  }
+  var sheet = ss.getSheetByName(REWARD_SHEET);
+  if (!sheet || sheet.getLastRow() <= 1) return jsonOut({ success: false, error: "Reward request not found" });
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0].map(function(h) { return String(h).trim(); });
+  var idCol = headers.indexOf("requestId");
+  var statusCol = headers.indexOf("status");
+  var updatedCol = headers.indexOf("updatedAt");
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idCol]) === String(data.requestId)) {
+      sheet.getRange(i + 1, statusCol + 1).setValue(data.status);
+      if (updatedCol >= 0) sheet.getRange(i + 1, updatedCol + 1).setValue(data.updatedAt || new Date().toISOString());
+      return jsonOut({ success: true });
+    }
+  }
+  return jsonOut({ success: false, error: "Reward request not found" });
 }
 
 // ── Action: Submit new route ──────────────────────────────────────────────────

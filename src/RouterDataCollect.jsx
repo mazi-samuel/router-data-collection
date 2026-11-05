@@ -94,6 +94,7 @@ const REWARDS = [
   { id: "glasses", title: "Photochromic Eyeglasses", xp: 100000,  img: glassesImg, desc: "Intelligent photochromism. Lenses automatically darken in direct sunlight and become transparent indoors." },
   { id: "crocs",   title: "Pair of Crocs",           xp: 50000,   img: crocsImg,   desc: "Lightweight, water-friendly, and buoyant. Iconic Crocs Comfort for everyday commuting convenience." },
 ];
+const REWARD_STATUSES = ["Pending", "Under review", "Approved", "Fulfilled", "Rejected"];
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 function xpToLevel(xp) {
@@ -519,6 +520,7 @@ export default function App() {
   const [entries, setEntries]     = useState([]);
   const [comments, setComments]   = useState([]);
   const [xpAdjustments, setXpAdjustments] = useState([]);
+  const [rewardRequests, setRewardRequests] = useState([]);
   // ── current user ──────────────────────────────────────────────────────────
   const [myXP, setMyXP]           = useState(0);
   const [myStreak, setMyStreak]   = useState(0);
@@ -530,6 +532,10 @@ export default function App() {
   const [loading, setLoading]     = useState(true);
   const [toast, setToast]         = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [rewardRequestSubmitting, setRewardRequestSubmitting] = useState(false);
+  const [rewardContact, setRewardContact] = useState("");
+  const [rewardAddress, setRewardAddress] = useState("");
+  const [rewardNote, setRewardNote] = useState("");
   // Synchronous re-entrancy lock for submit(). `submitting` state is async
   // (React batches the update), so two near-simultaneous clicks/taps can both
   // read submitting===false before the first re-render disables the button —
@@ -600,36 +606,40 @@ export default function App() {
     return routeXP + adjXP;
   }, []);
 
-  // ── Fetch all data (routes + comments + XP adjustments) ───────────────────
+  // ── Fetch all data (routes + comments + XP adjustments + reward requests) ─
   const fetchAll = useCallback(async (name, userId, silent = false) => {
     try {
       // Prefer the combined "all" endpoint (one round trip instead of three).
       // Falls back to the old three-call shape until the Apps Script backend
       // is redeployed with the "all" action.
-      let serverEntries, serverComments, serverAdj;
+      let serverEntries, serverComments, serverAdj, serverRewardRequests;
       try {
         const combined = await apiGet("all");
         if (combined && Array.isArray(combined.routes)) {
           serverEntries  = combined.routes;
           serverComments = Array.isArray(combined.comments) ? combined.comments : [];
           serverAdj      = Array.isArray(combined.xpAdjustments) ? combined.xpAdjustments : [];
+          serverRewardRequests = Array.isArray(combined.rewardRequests) ? combined.rewardRequests : [];
         }
       } catch {}
 
       if (!serverEntries) {
-        const [routeData, commentData, adjData] = await Promise.all([
+        const [routeData, commentData, adjData, rewardData] = await Promise.all([
           apiGet("get"),
           apiGet("comments").catch(() => []),
-          apiGet("xpadjustments").catch(() => [])
+          apiGet("xpadjustments").catch(() => []),
+          apiGet("rewardRequests").catch(() => [])
         ]);
         serverEntries  = Array.isArray(routeData) ? routeData : [];
         serverComments = Array.isArray(commentData) ? commentData : [];
         serverAdj      = Array.isArray(adjData) ? adjData : [];
+        serverRewardRequests = Array.isArray(rewardData) ? rewardData : [];
       }
 
       if (serverEntries.length > 0) setEntries(serverEntries);
       setComments(serverComments);
       setXpAdjustments(serverAdj);
+      setRewardRequests(serverRewardRequests || []);
 
       if (name) {
         const totalXP = computeMyXP(serverEntries, serverAdj, name, userId);
@@ -644,6 +654,55 @@ export default function App() {
       return null;
     }
   }, [computeMyXP]);
+
+  async function submitRewardRequest(reward) {
+    if (!myName || myXP < reward.xp || rewardRequestSubmitting) return;
+    if (!rewardContact.trim() || !rewardAddress.trim()) {
+      showToast("Add your phone number/email and delivery address", "warn");
+      return;
+    }
+    setRewardRequestSubmitting(true);
+    const request = {
+      action: "rewardRequest",
+      requestId: uid(),
+      rewardId: reward.id,
+      rewardTitle: reward.title,
+      rewardXP: reward.xp,
+      userId: myUserId,
+      userName: myName,
+      contact: rewardContact.trim(),
+      deliveryAddress: rewardAddress.trim(),
+      note: rewardNote.trim(),
+      status: "Pending",
+      requestedAt: new Date().toISOString()
+    };
+    try {
+      const response = await apiPost(request);
+      if (response?.success === false) throw new Error(response.error || "Request failed");
+      setRewardRequests(prev => [request, ...prev]);
+      setRewardContact("");
+      setRewardAddress("");
+      setRewardNote("");
+      showToast(`${reward.title} redemption request submitted`, "success");
+    } catch (error) {
+      showToast(error.message || "Could not submit redemption request", "warn");
+    } finally {
+      setRewardRequestSubmitting(false);
+    }
+  }
+
+  async function updateRewardRequestStatus(requestId, status) {
+    const previous = rewardRequests.find(request => request.requestId === requestId);
+    setRewardRequests(prev => prev.map(request => request.requestId === requestId ? { ...request, status } : request));
+    try {
+      const response = await apiPost({ action: "updateRewardRequest", requestId, status, updatedAt: new Date().toISOString() });
+      if (response?.success === false) throw new Error(response.error || "Status update failed");
+      showToast("Request status updated", "success");
+    } catch (error) {
+      setRewardRequests(prev => prev.map(request => request.requestId === requestId ? previous : request));
+      showToast(error.message || "Could not update request status", "warn");
+    }
+  }
 
   // ── Load saved state on mount ──────────────────────────────────────────────
   useEffect(() => {
@@ -1608,6 +1667,11 @@ export default function App() {
           {REWARDS.map(r => {
             const isUnlocked = myXP >= r.xp;
             const progressPct = Math.min(100, Math.round((myXP / r.xp) * 100));
+            const existingRequest = rewardRequests.find(request =>
+              request.rewardId === r.id &&
+              (request.userId === myUserId || (request.userName || "").trim().toLowerCase() === myName.trim().toLowerCase()) &&
+              !["Rejected", "Fulfilled"].includes(request.status)
+            );
             return (
               <div key={r.id} style={{ background: "#fff", border: isUnlocked ? "2px solid #10B981" : "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", marginBottom: 20, boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)" }}>
                 <div style={{ position: "relative", width: "100%", height: 240, background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
@@ -1627,14 +1691,47 @@ export default function App() {
                       <div style={{ height: "100%", width: `${progressPct}%`, background: isUnlocked ? "#10B981" : "#3B82F6", borderRadius: 4 }} />
                     </div>
                   </div>
-                  <button disabled={!isUnlocked} onClick={() => alert(`Congratulations! You have qualified for the ${r.title}. We will contact you soon.`)}
-                    style={{ width: "100%", padding: "12px", background: isUnlocked ? "#10B981" : "#E2E8F0", color: isUnlocked ? "#fff" : "#94A3B8", fontWeight: 700, fontSize: 14, border: "none", borderRadius: 10, cursor: isUnlocked ? "pointer" : "not-allowed" }}>
-                    {isUnlocked ? "Claim Reward" : "Locked (Insufficient XP)"}
+                  {isUnlocked && !existingRequest && (
+                    <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, color: "#166534", fontWeight: 700, marginBottom: 8 }}>Where should we contact you?</div>
+                      <input value={rewardContact} onChange={e => setRewardContact(e.target.value)} placeholder="Phone number or email" style={{ ...inp, marginBottom: 8 }} />
+                      <textarea value={rewardAddress} onChange={e => setRewardAddress(e.target.value)} placeholder="Full delivery address" rows={3} style={{ ...inp, resize: "vertical", marginBottom: 8 }} />
+                      <input value={rewardNote} onChange={e => setRewardNote(e.target.value)} placeholder="Optional note" style={inp} />
+                    </div>
+                  )}
+                  <button disabled={!isUnlocked || !!existingRequest || rewardRequestSubmitting} onClick={() => submitRewardRequest(r)}
+                    style={{ width: "100%", padding: "12px", background: isUnlocked && !existingRequest ? "#10B981" : "#E2E8F0", color: isUnlocked && !existingRequest ? "#fff" : "#94A3B8", fontWeight: 700, fontSize: 14, border: "none", borderRadius: 10, cursor: isUnlocked && !existingRequest ? "pointer" : "not-allowed" }}>
+                    {!isUnlocked ? "Locked (Insufficient XP)" : existingRequest ? `Request ${existingRequest.status}` : rewardRequestSubmitting ? "Submitting…" : "Request Redemption"}
                   </button>
                 </div>
               </div>
             );
           })}
+          <div style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontWeight: 900, fontSize: 18, color: "#0F172A" }}>Redemption requests</div>
+              <button onClick={() => fetchAll(myName, myUserId)} style={{ border: "1px solid #CBD5E1", background: "#fff", color: "#475569", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Refresh</button>
+            </div>
+            {rewardRequests.length === 0 ? (
+              <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 18, color: "#64748B", fontSize: 13 }}>No redemption requests yet.</div>
+            ) : rewardRequests.map(request => (
+              <div key={request.requestId} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight: 800, color: "#0F172A", fontSize: 14 }}>{request.rewardTitle}</div>
+                    <div style={{ fontSize: 12, color: "#64748B", marginTop: 3 }}>{request.userName} · {Number(request.rewardXP).toLocaleString()} XP</div>
+                    <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>{submittedAt(request.requestedAt)}</div>
+                  </div>
+                  <select value={request.status || "Pending"} onChange={e => updateRewardRequestStatus(request.requestId, e.target.value)} style={{ border: "1px solid #CBD5E1", borderRadius: 8, padding: "7px 8px", color: "#334155", fontWeight: 700, fontSize: 12, background: "#fff" }}>
+                    {REWARD_STATUSES.map(status => <option key={status} value={status}>{status}</option>)}
+                  </select>
+                </div>
+                {request.contact && <div style={{ fontSize: 12, color: "#475569", marginTop: 8 }}>Contact: {request.contact}</div>}
+                {request.deliveryAddress && <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>Delivery address: {request.deliveryAddress}</div>}
+                {request.note && <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>Note: {request.note}</div>}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
